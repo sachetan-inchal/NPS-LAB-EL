@@ -1,0 +1,32 @@
+# Simple, single-container OpenZiti or quickstart compose configuration
+# For local validation on a single laptop, using the OpenZiti quickstart container is the simplest method.
+version: '3.8'
+
+services:
+  ziti-controller:
+    image: openziti/quickstart:latest
+    container_name: ziti-controller
+    environment:
+      - ZITI_BOOTSTRAP=true
+      - ZITI_BOOTSTRAP_USER=admin
+      - ZITI_BOOTSTRAP_PASSWORD=adminpassword
+    ports:
+      - "1280:1280" # Controller Edge API / Dashboard
+      - "8443:8443" # Router link port
+    volumes:
+      - ziti-data:/openziti
+    command: /var/openziti/scripts/run-controller.sh
+
+  ziti-router:
+    image: openziti/quickstart:latest
+    container_name: ziti-router
+    depends_on:
+      - ziti-controller
+    environment:
+      - ZITI_CONTROLLER_RAW=ziti-controller:1280
+    volumes:
+      - ziti-data:/openziti
+    command: /var/openziti/scripts/run-router.sh
+
+volumes:
+  ziti-data:
