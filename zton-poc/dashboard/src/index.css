@@ -1,0 +1,24 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * { @apply border-soc-border; }
+  body { @apply bg-soc-bg text-soc-text; }
+}
+
+@layer components {
+  .glass-panel {
+    @apply bg-soc-panel/80 backdrop-blur-md border border-soc-border/60 rounded-xl shadow-xl;
+  }
+  .soc-grid-bg {
+    background-image:
+      linear-gradient(rgba(59, 130, 246, 0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(59, 130, 246, 0.03) 1px, transparent 1px);
+    background-size: 32px 32px;
+  }
+}
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { @apply bg-soc-border rounded-full; }

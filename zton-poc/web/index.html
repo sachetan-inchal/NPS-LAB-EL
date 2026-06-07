@@ -77,6 +77,16 @@
       </div>
     </section>
 
+    <section class="panel hub-notice" id="hub-notice">
+      <h2>📡 4-Tab Demo Setup</h2>
+      <div class="tab-guide">
+        <div class="tab-guide-item"><strong>Tab 8080</strong> — Hub SOC (this page) — watch all traffic</div>
+        <div class="tab-guide-item"><strong>Tab 8081</strong> — Laptop B — type &amp; send packets</div>
+        <div class="tab-guide-item"><strong>Tab 8082</strong> — Phone B — receive packets</div>
+        <div class="tab-guide-item"><strong>Tab 8083</strong> — Phone A — send (will be denied)</div>
+      </div>
+    </section>
+
     <section class="panel send-panel" id="send-panel">
       <h2>Send Encrypted Packet</h2>
       <div class="send-form">
@@ -85,7 +95,7 @@
           <option value="phone-b">Phone B (authorized viewer)</option>
           <option value="laptop-b">Laptop B</option>
         </select>
-        <input type="text" id="message-input" placeholder="Payload — sensor reading, chat, video chunk…" />
+        <input type="text" id="message-input" placeholder="Type your message here — chat, sensor reading, video chunk…" />
         <button id="send-btn">Encrypt &amp; Send over UDP</button>
       </div>
       <div class="demo-scenarios">

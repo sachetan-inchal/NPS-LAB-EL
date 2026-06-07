@@ -129,6 +129,11 @@ body {
   line-height: 1.5;
 }
 
+.hub-notice { grid-column: span 3; border-color: rgba(91, 141, 239, 0.4); background: rgba(91, 141, 239, 0.08); }
+.tab-guide { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.5rem; margin-top: 0.75rem; }
+.tab-guide-item { font-size: 0.85rem; padding: 0.5rem 0.75rem; background: var(--surface2); border-radius: 6px; border: 1px solid var(--border); }
+.tab-guide-item strong { color: var(--accent); }
+
 .topology-panel { grid-column: span 2; }
 
 .topology-grid {

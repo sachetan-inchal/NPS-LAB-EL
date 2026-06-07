@@ -3,7 +3,7 @@
 import asyncio
 import json
 from dataclasses import dataclass, asdict
-from datetime import datetime
+from zton.timeutil import utc_now_iso
 from typing import Any
 
 
@@ -20,7 +20,7 @@ class OverlayEvent:
 
     def __post_init__(self) -> None:
         if not self.timestamp:
-            self.timestamp = datetime.utcnow().isoformat() + "Z"
+            self.timestamp = utc_now_iso()
 
     def to_json(self) -> str:
         return json.dumps(asdict(self))

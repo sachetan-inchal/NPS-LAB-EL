@@ -1,0 +1,46 @@
+{
+  "systemStatus": {
+    "controller": { "status": "ONLINE", "label": "OpenZiti Controller" },
+    "router": { "status": "ONLINE", "label": "OpenZiti Router" },
+    "overlay": { "status": "ONLINE", "label": "ZTON UDP Overlay" },
+    "encryption": { "status": "ONLINE", "label": "AES-GCM + Ed25519" },
+    "connected_nodes": { "count": 4, "status": "ONLINE", "peers": ["laptop-b", "phone-b"] }
+  },
+  "stats": {
+    "total_sent": 1247,
+    "total_received": 1247,
+    "accepted": 1180,
+    "dropped": 67,
+    "replay_blocked": 23,
+    "active_sessions": 3,
+    "running": false
+  },
+  "samplePacket": {
+    "id": "a1b2c3d4",
+    "timestamp": "2026-06-08T14:32:01.234Z",
+    "sender": "Laptop B",
+    "sender_id": "laptop-b",
+    "receiver": "phone-b",
+    "session_id": "101",
+    "nonce": 1042,
+    "payload_type": "Video Stream",
+    "encryption": "AES-GCM + Ed25519",
+    "decision": "ACCEPTED",
+    "status": "ACCEPTED",
+    "payload_size": 65536,
+    "ciphertext_preview": "gAAAAABl8xK9mN3pQr7sT2vW8yZ..."
+  },
+  "sampleEvents": [
+    { "level": "INFO", "message": "Node laptop-b connected", "timestamp": "14:30:00Z", "source": "zton-overlay" },
+    { "level": "INFO", "message": "Session 101 established", "timestamp": "14:30:02Z", "source": "zton-overlay" },
+    { "level": "SUCCESS", "message": "Encrypted packet delivered", "timestamp": "14:30:05Z", "source": "Laptop B" },
+    { "level": "WARNING", "message": "Replay packet detected (nonce=998)", "timestamp": "14:31:12Z", "source": "zton-overlay" },
+    { "level": "CRITICAL", "message": "Unauthorized access attempt blocked — Phone A → Video Service", "timestamp": "14:31:45Z", "source": "policy-engine" }
+  ],
+  "policies": [
+    { "id": "p1", "effect": "allow", "source": "Laptop B", "target": "Video Service", "rule": "service-policy" },
+    { "id": "p2", "effect": "allow", "source": "Phone B", "target": "Sensor Service", "rule": "service-policy" },
+    { "id": "p3", "effect": "deny", "source": "Phone A", "target": "Video Service", "rule": "identity-policy" },
+    { "id": "p4", "effect": "deny", "source": "Unknown Node", "target": "Any Service", "rule": "default-deny" }
+  ]
+}

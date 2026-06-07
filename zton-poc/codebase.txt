@@ -1,0 +1,2099 @@
+# File: .\docker-compose.yml
+```
+# ZTON 4-Device Demo — Zero Trust Overlay over Raw UDP
+#
+# Laptop A (Hub)     → http://localhost:8080
+# Laptop B (Sender)  → http://localhost:8081
+# Phone B  (Viewer)  → http://localhost:8082
+# Phone A  (Blocked) → http://localhost:8083
+#
+# For 4 physical devices on a LAN, set ZTON_HUB_HOST to Laptop A's IP
+# on each node and expose ports 8080 + 9999/udp on the hub machine.
+
+services:
+  laptop-a:
+    build: .
+    container_name: zton-laptop-a
+    hostname: laptop-a
+    environment:
+      ZTON_ROLE: hub
+      ZTON_DEVICE_ID: laptop-a
+      ZTON_DEVICE_NAME: "Laptop A (Hub)"
+      ZTON_UDP_PORT: "9999"
+      ZTON_WEB_PORT: "8080"
+      ZTON_KEYS_DIR: /app/keys
+    ports:
+      - "8080:8080"
+      - "9999:9999/udp"
+    networks:
+      - zton-net
+    volumes:
+      - zton-keys:/app/keys
+    working_dir: /app
+
+  laptop-b:
+    build: .
+    container_name: zton-laptop-b
+    hostname: laptop-b
+    depends_on:
+      - laptop-a
+    environment:
+      ZTON_ROLE: node
+      ZTON_DEVICE_ID: laptop-b
+      ZTON_DEVICE_NAME: "Laptop B (Authorized Sender)"
+      ZTON_HUB_HOST: laptop-a
+      ZTON_UDP_PORT: "9999"
+      ZTON_WEB_PORT: "8080"
+      ZTON_AUTHORIZED: "true"
+      ZTON_TARGETS: "phone-b,hub"
+      ZTON_KEYS_DIR: /app/keys
+    ports:
+      - "8081:8080"
+    networks:
+      - zton-net
+    volumes:
+      - zton-keys:/app/keys
+
+  phone-b:
+    build: .
+    container_name: zton-phone-b
+    hostname: phone-b
+    depends_on:
+      - laptop-a
+    environment:
+      ZTON_ROLE: node
+      ZTON_DEVICE_ID: phone-b
+      ZTON_DEVICE_NAME: "Phone B (Authorized Viewer)"
+      ZTON_HUB_HOST: laptop-a
+      ZTON_UDP_PORT: "9999"
+      ZTON_WEB_PORT: "8080"
+      ZTON_AUTHORIZED: "true"
+      ZTON_TARGETS: "hub"
+      ZTON_KEYS_DIR: /app/keys
+    ports:
+      - "8082:8080"
+    networks:
+      - zton-net
+    volumes:
+      - zton-keys:/app/keys
+
+  phone-a:
+    build: .
+    container_name: zton-phone-a
+    hostname: phone-a
+    depends_on:
+      - laptop-a
+    environment:
+      ZTON_ROLE: node
+      ZTON_DEVICE_ID: phone-a
+      ZTON_DEVICE_NAME: "Phone A (Unauthorized)"
+      ZTON_HUB_HOST: laptop-a
+      ZTON_UDP_PORT: "9999"
+      ZTON_WEB_PORT: "8080"
+      ZTON_AUTHORIZED: "false"
+      ZTON_TARGETS: ""
+      ZTON_KEYS_DIR: /app/keys
+    ports:
+      - "8083:8080"
+    networks:
+      - zton-net
+    volumes:
+      - zton-keys:/app/keys
+
+networks:
+  zton-net:
+    driver: bridge
+
+volumes:
+  zton-keys:
+
+```
+
+# File: .\docker-compose.ziti.yml
+```
+# Optional OpenZiti quickstart — separate from ZTON demo
+version: '3.8'
+
+services:
+  ziti-controller:
+    image: openziti/quickstart:latest
+    container_name: ziti-controller
+    environment:
+      - ZITI_BOOTSTRAP=true
+      - ZITI_BOOTSTRAP_USER=admin
+      - ZITI_BOOTSTRAP_PASSWORD=adminpassword
+    ports:
+      - "1280:1280"
+      - "8443:8443"
+    volumes:
+      - ziti-data:/openziti
+    command: /var/openziti/scripts/run-controller.sh
+
+  ziti-router:
+    image: openziti/quickstart:latest
+    container_name: ziti-router
+    depends_on:
+      - ziti-controller
+    environment:
+      - ZITI_CONTROLLER_RAW=ziti-controller:1280
+    volumes:
+      - ziti-data:/openziti
+    command: /var/openziti/scripts/run-router.sh
+
+volumes:
+  ziti-data:
+
+```
+
+# File: .\main.py
+```
+"""ZTON demo entry point."""
+
+from server.app import run
+
+if __name__ == "__main__":
+    run()
+
+```
+
+# File: .\README.md
+```
+# ZTON — Zero Trust Overlay Network Demo
+
+**A Zero Trust Overlay Network Built on Raw UDP Sockets with Mutual Authentication and Per-Packet Encryption**
+
+Custom-branded web demo for the NPS Lab. No third-party console logos — this is a standalone ZTON UI.
+
+## 4-Device Scenario
+
+| Device | Role | URL (local) | Policy |
+|--------|------|-------------|--------|
+| **Laptop A** | Hub / Controller / Dashboard | http://localhost:8080 | Always allowed |
+| **Laptop B** | Authorized sender (sensor, video, voice) | http://localhost:8081 | Allowed → can route to Phone B |
+| **Phone B** | Authorized viewer (receives streams) | http://localhost:8082 | Allowed |
+| **Phone A** | Unauthorized attacker | http://localhost:8083 | **Denied** by policy engine |
+
+## Quick Start (1 laptop, 4 browser tabs)
+
+```bash
+cd zton-poc
+docker compose up --build
+```
+
+Then open:
+
+- http://localhost:8080 — Hub dashboard (watch all traffic live)
+- http://localhost:8081 — Send as Laptop B (authorized)
+- http://localhost:8082 — View as Phone B (receives forwarded packets)
+- http://localhost:8083 — Try as Phone A (packets denied)
+
+### Demo script for viva
+
+1. **Hub dashboard** (`:8080`) — show architecture stack and 4-device topology.
+2. **Laptop B** (`:8081`) — click "Sensor Data" or "Video Chunk" → watch hub log show `compress → encrypt → forward`.
+3. **Phone B** (`:8082`) — confirm received decrypted payload in its log.
+4. **Phone A** (`:8083`) — click "Attempt Send" → hub shows `DENY` (zero-trust policy block).
+5. Point out stats: original vs compressed vs encrypted bytes, packets denied counter.
+
+## 4 Physical Devices on a LAN
+
+Run the **hub** on Laptop A. Run each **node** on the other three devices.
+
+### Laptop A (Hub)
+
+```bash
+docker compose up laptop-a --build
+# Or without Docker:
+pip install -r requirements.txt
+ZTON_ROLE=hub ZTON_WEB_PORT=8080 python main.py
+```
+
+Ensure UDP **9999** and TCP **8080** are reachable from the LAN (firewall rules).
+
+Find Laptop A's LAN IP: `ipconfig` (Windows) or `ip addr` (Linux).
+
+### Laptop B / Phone B / Phone A (Nodes)
+
+On each device, set `ZTON_HUB_HOST` to Laptop A's IP (e.g. `192.168.1.10`):
+
+```bash
+# Laptop B
+ZTON_ROLE=node ZTON_DEVICE_ID=laptop-b ZTON_DEVICE_NAME="Laptop B" \
+  ZTON_HUB_HOST=192.168.1.10 ZTON_AUTHORIZED=true ZTON_TARGETS=phone-b,hub \
+  ZTON_WEB_PORT=8081 python main.py
+
+# Phone B
+ZTON_ROLE=node ZTON_DEVICE_ID=phone-b ZTON_DEVICE_NAME="Phone B" \
+  ZTON_HUB_HOST=192.168.1.10 ZTON_AUTHORIZED=true ZTON_WEB_PORT=8082 python main.py
+
+# Phone A (unauthorized)
+ZTON_ROLE=node ZTON_DEVICE_ID=phone-a ZTON_DEVICE_NAME="Phone A" \
+  ZTON_HUB_HOST=192.168.1.10 ZTON_AUTHORIZED=false ZTON_WEB_PORT=8083 python main.py
+```
+
+Open each device's browser to `http://<device-ip>:<port>`.
+
+## Architecture
+
+```
+Application
+     ↓
+Compression (zlib)
+     ↓
+Policy Engine (identity allow/deny + route rules)
+     ↓
+Per-Packet Encryption (AES-GCM)
+     ↓
+Mutual Authentication (Ed25519 signatures)
+     ↓
+Raw UDP Transport
+     ↓
+Internet / LAN
+```
+
+## What Each Layer Does
+
+| Layer | Implementation |
+|-------|----------------|
+| UDP transport | Python `socket.SOCK_DGRAM` — no TCP overhead |
+| Mutual auth | Ed25519 signature on every packet |
+| Per-packet encryption | AES-GCM with monotonic sequence (replay protection) |
+| Compression | zlib before encryption — dashboard shows byte savings |
+| Policy engine | Allow-list identities, deny-list, per-route rules |
+| Web UI | FastAPI + WebSocket live log — custom ZTON branding |
+
+## Relation to OpenZiti (parent repo)
+
+This repo also contains **OpenZiti** — a production zero-trust overlay platform. ZTON is a focused lab demo that implements the same *concepts* (UDP overlay, identity policy, encryption) in a minimal, presenter-friendly stack. The official Ziti Admin Console (`/zac/`) is **not used** in this demo.
+
+## Legacy CLI demo
+
+The original replay-detection CLI is still available:
+
+```bash
+python zton_demo.py server --port 9999
+python zton_demo.py client --port 9999 --replay-nonce
+```
+
+## Optional: OpenZiti backend
+
+To run OpenZiti controller alongside (separate stack):
+
+```bash
+docker compose -f docker-compose.ziti.yml up -d
+```
+
+Console at https://localhost:1280/zac/ — only if you need the full OpenZiti management plane.
+
+```
+
+# File: .\repo_to_text.py
+```
+# save as repo_to_text.py
+import os, sys
+
+IGNORE_DIRS = {'.git', 'node_modules', '__pycache__', '.venv', 'dist', 'build'}
+ALLOW_EXTS = {'.py', '.js', '.ts', '.jsx', '.tsx', '.css', '.html', '.json', '.md', '.yaml', '.yml', '.toml', '.rs', '.go', '.java', '.cpp', '.h', '.c'}
+
+def export_codebase(root, out_file):
+    with open(out_file, 'w', encoding='utf-8') as f:
+        for dirpath, dirnames, filenames in os.walk(root):
+            dirnames[:] = [d for d in dirnames if d not in IGNORE_DIRS]
+            for fname in filenames:
+                if os.path.splitext(fname)[1].lower() in ALLOW_EXTS:
+                    fpath = os.path.join(dirpath, fname)
+                    try:
+                        content = open(fpath, 'r', encoding='utf-8').read()
+                        f.write(f"# File: {fpath}\n```\n{content}\n```\n\n")
+                    except Exception:
+                        pass
+    print(f"✅ Exported to {out_file}")
+
+if __name__ == "__main__":
+    export_codebase(sys.argv[1] if len(sys.argv) > 1 else ".", "codebase.txt")
+```
+
+# File: .\zton_demo.py
+```
+import os
+import sys
+import json
+import time
+import socket
+import argparse
+from cryptography.fernet import Fernet
+
+# Key management: Simple symmetric key generated or read from local file/env
+KEY_FILE = "zton_secret.key"
+
+def load_or_create_key():
+    if os.path.exists(KEY_FILE):
+        with open(KEY_FILE, "rb") as f:
+            return f.read()
+    else:
+        key = Fernet.generate_key()
+        with open(KEY_FILE, "wb") as f:
+            f.write(key)
+        return key
+
+class ZTONPacket:
+    def __init__(self, packet_type, session_id, sender_id, nonce, payload):
+        self.type = packet_type
+        self.session_id = session_id
+        self.sender_id = sender_id
+        self.nonce = nonce
+        self.payload = payload
+
+    def to_json(self):
+        return json.dumps({
+            "type": self.type,
+            "session_id": self.session_id,
+            "sender_id": self.sender_id,
+            "nonce": self.nonce,
+            "payload": self.payload
+        })
+
+    @staticmethod
+    def from_json(json_str):
+        data = json.loads(json_str)
+        return ZTONPacket(
+            packet_type=data["type"],
+            session_id=data["session_id"],
+            sender_id=data["sender_id"],
+            nonce=data["nonce"],
+            payload=data["payload"]
+        )
+
+def run_server(port):
+    key = load_or_create_key()
+    fernet = Fernet(key)
+    print(f"[*] ZTON Server starting on UDP port {port}")
+    print(f"[*] Loaded key: {key.decode()}")
+
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.bind(("127.0.0.1", port))
+
+    highest_nonce = -1
+
+    while True:
+        data, addr = sock.recvfrom(4096)
+        try:
+            packet_str = data.decode("utf-8")
+            packet = ZTONPacket.from_json(packet_str)
+
+            print(f"\n[IN] type={packet.type} session={packet.session_id} sender={packet.sender_id} nonce={packet.nonce}")
+            print(f"Ciphertext:\n{packet.payload}")
+
+            # Replay protection check
+            if packet.nonce <= highest_nonce:
+                print(f"Replay Detected -> Dropped (Received nonce {packet.nonce} <= Highest {highest_nonce})")
+                continue
+            
+            # Update highest seen nonce
+            highest_nonce = packet.nonce
+            print("Packet Accepted")
+
+            # Decrypt payload
+            try:
+                decrypted = fernet.decrypt(packet.payload.encode("utf-8")).decode("utf-8")
+                print(f"Plaintext:\n{decrypted}")
+            except Exception as dec_err:
+                print(f"Decryption Error: {dec_err}")
+
+        except Exception as e:
+            print(f"[-] Failed to process packet: {e}")
+
+def run_client(port, session_id, sender_id, payload_text, duplicate_nonce=False):
+    key = load_or_create_key()
+    fernet = Fernet(key)
+    print(f"[*] ZTON Client targeting UDP port {port}")
+
+    # Encrypt the payload
+    ciphertext = fernet.encrypt(payload_text.encode("utf-8")).decode("utf-8")
+
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
+    # Packet 1
+    p1 = ZTONPacket(packet_type="DATA", session_id=session_id, sender_id=sender_id, nonce=1, payload=ciphertext)
+    payload_str1 = p1.to_json()
+    sock.sendto(payload_str1.encode("utf-8"), ("127.0.0.1", port))
+    print(f"\n[OUT] session={p1.session_id} nonce={p1.nonce}")
+    print(f"Ciphertext:\n{p1.payload}")
+    print(f"Plaintext:\n{payload_text}")
+
+    time.sleep(1)
+
+    # Packet 2 (Next nonce)
+    p2 = ZTONPacket(packet_type="DATA", session_id=session_id, sender_id=sender_id, nonce=2, payload=ciphertext)
+    payload_str2 = p2.to_json()
+    sock.sendto(payload_str2.encode("utf-8"), ("127.0.0.1", port))
+    print(f"\n[OUT] session={p2.session_id} nonce={p2.nonce}")
+
+    time.sleep(1)
+
+    # Packet 3 (Replayed Nonce 1 or 2)
+    replay_nonce = 1 if duplicate_nonce else 2
+    p3 = ZTONPacket(packet_type="DATA", session_id=session_id, sender_id=sender_id, nonce=replay_nonce, payload=ciphertext)
+    payload_str3 = p3.to_json()
+    sock.sendto(payload_str3.encode("utf-8"), ("127.0.0.1", port))
+    print(f"\n[OUT] (REPLAY TEST) session={p3.session_id} nonce={p3.nonce}")
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="ZTON Security Demonstration Utility")
+    subparsers = parser.add_subparsers(dest="mode", required=True)
+
+    server_parser = subparsers.add_parser("server", help="Run in Server Mode")
+    server_parser.add_argument("--port", type=int, default=9999, help="UDP port to listen on")
+
+    client_parser = subparsers.add_parser("client", help="Run in Client Mode")
+    client_parser.add_argument("--port", type=int, default=9999, help="Target UDP port")
+    client_parser.add_argument("--session", type=int, default=100, help="Session ID")
+    client_parser.add_argument("--sender", type=str, default="client-01", help="Sender identity name")
+    client_parser.add_argument("--payload", type=str, default="HELLO ZTON", help="Plaintext payload to encrypt")
+    client_parser.add_argument("--replay-nonce", action="store_true", help="Send a packet with an already used nonce to test replay detection")
+
+    args = parser.parse_args()
+
+    if args.mode == "server":
+        run_server(args.port)
+    elif args.mode == "client":
+        run_client(args.port, args.session, args.sender, args.payload, args.replay_nonce)
+
+```
+
+# File: .\server\app.py
+```
+"""ZTON demo web server — hub dashboard and per-device endpoints."""
+
+import asyncio
+import os
+from contextlib import asynccontextmanager
+from pathlib import Path
+
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
+
+from zton.hub import ZtonHub
+from zton.node import ZtonNode
+
+WEB_DIR = Path(__file__).resolve().parent.parent / "web"
+
+# Global runtime state
+hub: ZtonHub | None = None
+node: ZtonNode | None = None
+
+
+class SendRequest(BaseModel):
+    message: str
+    target_id: str = ""
+
+
+DEVICE_TOPOLOGY = [
+    {
+        "device_id": "laptop-a",
+        "device_name": "Laptop A",
+        "role": "Hub / Controller",
+        "icon": "hub",
+        "authorized": True,
+        "description": "Overlay hub, policy engine, dashboard",
+    },
+    {
+        "device_id": "laptop-b",
+        "device_name": "Laptop B",
+        "role": "Authorized Sender",
+        "icon": "laptop",
+        "authorized": True,
+        "description": "Sends sensor data and video chunks through overlay",
+        "targets": ["phone-b", "hub"],
+    },
+    {
+        "device_id": "phone-b",
+        "device_name": "Phone B",
+        "role": "Authorized Viewer",
+        "icon": "phone",
+        "authorized": True,
+        "description": "Receives forwarded encrypted streams",
+        "targets": ["hub"],
+    },
+    {
+        "device_id": "phone-a",
+        "device_name": "Phone A",
+        "role": "Unauthorized Client",
+        "icon": "phone-blocked",
+        "authorized": False,
+        "description": "Fails zero-trust policy — packets denied",
+        "targets": [],
+    },
+]
+
+
+def _init_runtime(loop: asyncio.AbstractEventLoop) -> None:
+    global hub, node
+    role = os.getenv("ZTON_ROLE", "hub")
+    device_id = os.getenv("ZTON_DEVICE_ID", "laptop-a")
+    device_name = os.getenv("ZTON_DEVICE_NAME", "Laptop A (Hub)")
+    udp_port = int(os.getenv("ZTON_UDP_PORT", "9999"))
+    hub_host = os.getenv("ZTON_HUB_HOST", "127.0.0.1")
+    authorized = os.getenv("ZTON_AUTHORIZED", "true").lower() == "true"
+    targets = [t.strip() for t in os.getenv("ZTON_TARGETS", "").split(",") if t.strip()]
+
+    if role == "hub":
+        hub = ZtonHub(device_id=device_id, device_name=device_name, udp_port=udp_port, loop=loop)
+        hub.configure_peers([
+            {"device_id": "laptop-b", "authorized": True, "targets": ["phone-b", "hub"]},
+            {"device_id": "phone-b", "authorized": True, "targets": ["hub"]},
+            {"device_id": "phone-a", "authorized": False, "targets": []},
+        ])
+        hub.start()
+    else:
+        node = ZtonNode(
+            device_id=device_id,
+            device_name=device_name,
+            hub_host=hub_host,
+            hub_port=udp_port,
+            authorized=authorized,
+            targets=targets,
+        )
+        node.start()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    _init_runtime(asyncio.get_running_loop())
+    yield
+    if hub:
+        hub.stop()
+    if node:
+        node.stop()
+
+
+app = FastAPI(title="ZTON Demo", lifespan=lifespan)
+app.mount("/static", StaticFiles(directory=WEB_DIR), name="static")
+
+
+@app.get("/")
+async def index():
+    return FileResponse(WEB_DIR / "index.html")
+
+
+@app.get("/api/topology")
+async def topology():
+    return {"devices": DEVICE_TOPOLOGY, "role": os.getenv("ZTON_ROLE", "hub")}
+
+
+@app.get("/api/status")
+async def status():
+    role = os.getenv("ZTON_ROLE", "hub")
+    if role == "hub" and hub:
+        return {"role": "hub", **hub.status()}
+    if node:
+        return {"role": "node", **node.status()}
+    return {"role": role, "status": "initializing"}
+
+
+@app.get("/api/events")
+async def events():
+    if hub:
+        return {"events": hub.events.history()}
+    if node:
+        return {"events": node._last_events}
+    return {"events": []}
+
+
+@app.post("/api/send")
+async def send_packet(req: SendRequest):
+    if node:
+        stats = node.send_message(req.message, req.target_id)
+        return {"ok": True, "stats": stats}
+    if hub:
+        # Hub can inject a test packet as if from laptop-b for demo without all nodes running
+        return {"ok": False, "error": "Hub cannot send — use a node device or POST from laptop-b UI"}
+    return {"ok": False, "error": "No node running"}
+
+
+@app.websocket("/ws/events")
+async def ws_events(websocket: WebSocket):
+    await websocket.accept()
+    if not hub:
+        await websocket.send_json({"kind": "info", "message": "Node mode — polling /api/events instead"})
+        await websocket.close()
+        return
+
+    q = hub.events.subscribe()
+    try:
+        for event in hub.events.history():
+            await websocket.send_json(event)
+        while True:
+            event = await q.get()
+            await websocket.send_json(event)
+    except WebSocketDisconnect:
+        pass
+    finally:
+        hub.events.unsubscribe(q)
+
+
+def run():
+    import uvicorn
+    port = int(os.getenv("ZTON_WEB_PORT", "8080"))
+    uvicorn.run("server.app:app", host="0.0.0.0", port=port, reload=False)
+
+```
+
+# File: .\server\__init__.py
+```
+
+```
+
+# File: .\web\app.js
+```
+const $ = (sel) => document.querySelector(sel);
+const logEl = $('#event-log');
+const statusEl = $('#connection-status');
+const roleBadge = $('#role-badge');
+const sendPanel = $('#send-panel');
+const sendHint = $('#send-hint');
+const sendBtn = $('#send-btn');
+
+let role = 'hub';
+let deviceId = '';
+let ws = null;
+let bytesSaved = 0;
+
+const ICONS = {
+  hub: '<svg class="device-icon" viewBox="0 0 48 48"><rect x="8" y="14" width="32" height="22" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><line x1="16" y1="36" x2="32" y2="36" stroke="currentColor" stroke-width="2"/><circle cx="24" cy="8" r="4" fill="currentColor"/></svg>',
+  laptop: '<svg class="device-icon" viewBox="0 0 48 48"><rect x="10" y="12" width="28" height="18" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M6 34 h36 l-4 6 h-28 z" fill="none" stroke="currentColor" stroke-width="2"/></svg>',
+  phone: '<svg class="device-icon" viewBox="0 0 48 48"><rect x="16" y="6" width="16" height="36" rx="3" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="24" cy="36" r="2" fill="currentColor"/></svg>',
+  'phone-blocked': '<svg class="device-icon" viewBox="0 0 48 48"><rect x="16" y="6" width="16" height="36" rx="3" fill="none" stroke="currentColor" stroke-width="2"/><line x1="14" y1="14" x2="34" y2="34" stroke="currentColor" stroke-width="2.5"/></svg>',
+};
+
+async function init() {
+  const [topo, status] = await Promise.all([
+    fetch('/api/topology').then((r) => r.json()),
+    fetch('/api/status').then((r) => r.json()),
+  ]);
+
+  role = topo.role || status.role || 'hub';
+  deviceId = status.device_id || status.hub_id || '';
+
+  renderTopology(topo.devices, status);
+  updateStats(status);
+  configureSendPanel(status);
+
+  if (role === 'hub') {
+    connectWebSocket();
+    statusEl.textContent = 'Hub Dashboard — Live';
+    statusEl.classList.add('connected');
+  } else {
+    statusEl.textContent = `Node: ${status.device_name || deviceId}`;
+    statusEl.classList.add('node');
+    pollNodeEvents();
+  }
+
+  roleBadge.textContent = role === 'hub'
+    ? 'Viewing as: Hub Controller (Laptop A)'
+    : `Viewing as: ${status.device_name} (${deviceId})`;
+
+  $('#device-info').textContent = deviceId ? `Device: ${deviceId}` : '';
+  setInterval(refreshStatus, 3000);
+}
+
+function renderTopology(devices, status) {
+  const peers = new Set((status.peers || []).map((p) => p.device_id));
+  const grid = $('#topology-grid');
+  grid.innerHTML = devices.map((d) => {
+    const isCurrent = d.device_id === deviceId || (role === 'hub' && d.device_id === 'laptop-a');
+    const online = peers.has(d.device_id) || (role === 'hub' && d.device_id === 'laptop-a');
+    const blocked = !d.authorized;
+    let statusClass = online ? 'online' : 'offline';
+    let statusText = online ? 'ONLINE' : 'OFFLINE';
+    if (blocked && online) { statusClass = 'denied'; statusText = 'DENIED'; }
+    if (blocked && !online && role !== 'hub') { statusText = 'BLOCKED'; statusClass = 'denied'; }
+
+    return `
+      <div class="device-card ${blocked ? 'blocked' : ''} ${online ? 'online' : ''} ${isCurrent ? 'current' : ''}">
+        ${ICONS[d.icon] || ICONS.laptop}
+        <h3>${d.device_name}</h3>
+        <div class="role">${d.role}</div>
+        <div class="desc">${d.description}</div>
+        <span class="device-status ${statusClass}">${statusText}</span>
+      </div>`;
+  }).join('');
+}
+
+function configureSendPanel(status) {
+  const isNode = role === 'node';
+  const authorized = status.authorized !== false && status.policy_result !== 'DENY';
+
+  if (!isNode) {
+    sendHint.textContent = 'Open Laptop B (:8081) or Phone A (:8083) in another tab/device to send packets.';
+    sendBtn.disabled = true;
+    return;
+  }
+
+  if (!authorized) {
+    sendHint.textContent = 'This device is unauthorized — packets will be denied by the policy engine (demo the block!).';
+    sendBtn.disabled = false;
+    sendBtn.textContent = 'Attempt Send (will be denied)';
+  } else {
+    sendHint.textContent = 'Payload is compressed → encrypted (AES-GCM) → signed (Ed25519) → sent over raw UDP.';
+    sendBtn.disabled = false;
+  }
+}
+
+function connectWebSocket() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${proto}://${location.host}/ws/events`);
+  ws.onmessage = (e) => {
+    const event = JSON.parse(e.data);
+    appendLog(event);
+    updateStatsFromEvent(event);
+  };
+  ws.onclose = () => setTimeout(connectWebSocket, 2000);
+}
+
+async function pollNodeEvents() {
+  const events = await fetch('/api/events').then((r) => r.json());
+  logEl.innerHTML = '';
+  (events.events || []).forEach(appendLog);
+  setInterval(async () => {
+    const res = await fetch('/api/events').then((r) => r.json());
+    const newEvents = res.events || [];
+    if (newEvents.length > logEl.children.length) {
+      newEvents.slice(logEl.children.length).forEach(appendLog);
+    }
+  }, 1500);
+}
+
+async function refreshStatus() {
+  const status = await fetch('/api/status').then((r) => r.json());
+  const topo = await fetch('/api/topology').then((r) => r.json());
+  renderTopology(topo.devices, status);
+  updateStats(status);
+}
+
+function updateStats(status) {
+  const stats = status.stats || {};
+  $('#stat-packets').textContent = stats.packets_forwarded ?? stats.packets_total ?? 0;
+  $('#stat-denied').textContent = stats.packets_denied ?? 0;
+  $('#stat-peers').textContent = (status.peers || []).length;
+  $('#stat-bytes').textContent = bytesSaved;
+}
+
+function updateStatsFromEvent(event) {
+  if (event.stats) {
+    const saved = (event.stats.original_bytes || 0) - (event.stats.compressed_bytes || 0);
+    if (saved > 0) bytesSaved += saved;
+    $('#stat-bytes').textContent = bytesSaved;
+  }
+  if (event.kind === 'packet' && event.policy === 'ALLOW') {
+    const el = $('#stat-packets');
+    el.textContent = parseInt(el.textContent) + 1;
+  }
+  if (event.kind === 'deny') {
+    const el = $('#stat-denied');
+    el.textContent = parseInt(el.textContent) + 1;
+  }
+}
+
+function appendLog(event) {
+  const kind = event.kind || 'info';
+  const time = (event.timestamp || new Date().toISOString()).slice(11, 19);
+  const policy = event.policy
+    ? `<span class="policy-${event.policy === 'ALLOW' ? 'allow' : 'deny'}">[${event.policy}]</span> `
+    : '';
+  const stats = event.stats
+    ? `<div class="stats">original: ${event.stats.original_bytes}B → compressed: ${event.stats.compressed_bytes}B → encrypted: ${event.stats.encrypted_bytes}B (seq ${event.stats.sequence})</div>`
+    : '';
+
+  const entry = document.createElement('div');
+  entry.className = `log-entry ${kind}`;
+  entry.innerHTML = `<span class="time">${time}</span>${policy}<span class="device">${event.device_name || event.device_id || 'system'}</span> — ${event.message || ''}${stats}`;
+  logEl.prepend(entry);
+  while (logEl.children.length > 80) logEl.removeChild(logEl.lastChild);
+}
+
+sendBtn.addEventListener('click', async () => {
+  const message = $('#message-input').value.trim();
+  if (!message) return;
+  const target_id = $('#target-select').value;
+  const res = await fetch('/api/send', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message, target_id }),
+  }).then((r) => r.json());
+  if (res.stats) {
+    appendLog({
+      kind: 'packet',
+      device_name: deviceId,
+      message: `Sent: ${message}`,
+      policy: 'SENT',
+      stats: res.stats,
+      timestamp: new Date().toISOString(),
+    });
+  }
+  $('#message-input').value = '';
+});
+
+document.querySelectorAll('.scenario-btn').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    $('#message-input').value = btn.dataset.msg;
+    if (role === 'node') sendBtn.click();
+  });
+});
+
+init();
+
+```
+
+# File: .\web\index.html
+```
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ZTON — Zero Trust Overlay Network</title>
+  <link rel="stylesheet" href="/static/styles.css">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <svg class="brand-icon" viewBox="0 0 40 40" aria-hidden="true">
+        <polygon points="20,2 38,12 38,28 20,38 2,28 2,12" fill="none" stroke="currentColor" stroke-width="2"/>
+        <circle cx="20" cy="20" r="6" fill="currentColor"/>
+        <line x1="20" y1="2" x2="20" y2="14" stroke="currentColor" stroke-width="1.5"/>
+        <line x1="38" y1="12" x2="26" y2="18" stroke="currentColor" stroke-width="1.5"/>
+        <line x1="38" y1="28" x2="26" y2="22" stroke="currentColor" stroke-width="1.5"/>
+        <line x1="20" y1="38" x2="20" y2="26" stroke="currentColor" stroke-width="1.5"/>
+        <line x1="2" y1="28" x2="14" y2="22" stroke="currentColor" stroke-width="1.5"/>
+        <line x1="2" y1="12" x2="14" y2="18" stroke="currentColor" stroke-width="1.5"/>
+      </svg>
+      <div>
+        <h1>ZTON</h1>
+        <p class="tagline">Zero Trust Overlay Network</p>
+      </div>
+    </div>
+    <div class="status-pill" id="connection-status">Connecting…</div>
+  </header>
+
+  <main class="layout">
+    <section class="panel arch-panel">
+      <h2>Architecture</h2>
+      <div class="arch-stack">
+        <div class="arch-layer">Application</div>
+        <div class="arch-arrow">↓</div>
+        <div class="arch-layer accent">Compression Layer</div>
+        <div class="arch-arrow">↓</div>
+        <div class="arch-layer accent">Policy Engine</div>
+        <div class="arch-arrow">↓</div>
+        <div class="arch-layer accent">Per-Packet Encryption (AES-GCM)</div>
+        <div class="arch-arrow">↓</div>
+        <div class="arch-layer accent">Mutual Auth (Ed25519)</div>
+        <div class="arch-arrow">↓</div>
+        <div class="arch-layer highlight">Raw UDP Transport</div>
+        <div class="arch-arrow">↓</div>
+        <div class="arch-layer">Internet</div>
+      </div>
+      <p class="arch-note">Raw UDP sockets · Mutual authentication · Per-packet encryption · Identity-based zero trust</p>
+    </section>
+
+    <section class="panel topology-panel">
+      <h2>4-Device Demo Topology</h2>
+      <div class="topology-grid" id="topology-grid"></div>
+      <div class="role-badge" id="role-badge"></div>
+    </section>
+
+    <section class="panel stats-panel">
+      <h2>Live Metrics</h2>
+      <div class="stats-grid">
+        <div class="stat-card">
+          <span class="stat-value" id="stat-packets">0</span>
+          <span class="stat-label">Packets Forwarded</span>
+        </div>
+        <div class="stat-card deny">
+          <span class="stat-value" id="stat-denied">0</span>
+          <span class="stat-label">Packets Denied</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-value" id="stat-peers">0</span>
+          <span class="stat-label">Peers Online</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-value" id="stat-bytes">0</span>
+          <span class="stat-label">Bytes Saved (compression)</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel send-panel" id="send-panel">
+      <h2>Send Encrypted Packet</h2>
+      <div class="send-form">
+        <select id="target-select">
+          <option value="">Hub (broadcast)</option>
+          <option value="phone-b">Phone B (authorized viewer)</option>
+          <option value="laptop-b">Laptop B</option>
+        </select>
+        <input type="text" id="message-input" placeholder="Payload — sensor reading, chat, video chunk…" />
+        <button id="send-btn">Encrypt &amp; Send over UDP</button>
+      </div>
+      <div class="demo-scenarios">
+        <button class="scenario-btn" data-msg="SENSOR: temp=23.4°C humidity=61%">Sensor Data</button>
+        <button class="scenario-btn" data-msg="VIDEO_CHUNK: frame=1847 size=4096 codec=mjpeg">Video Chunk</button>
+        <button class="scenario-btn" data-msg="VOICE: opus_frame_120ms">Voice Stream</button>
+        <button class="scenario-btn" data-msg="CONTROL: unlock_gate zone=lab-3">Control Signal</button>
+      </div>
+      <p class="send-hint" id="send-hint"></p>
+    </section>
+
+    <section class="panel log-panel">
+      <h2>Live Packet Log</h2>
+      <div class="log-container" id="event-log"></div>
+    </section>
+  </main>
+
+  <footer>
+    <span>NPS Lab — Secure Transport Overlay Demo</span>
+    <span id="device-info"></span>
+  </footer>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
+
+```
+
+# File: .\web\styles.css
+```
+:root {
+  --bg: #0a0e17;
+  --surface: #111827;
+  --surface2: #1a2332;
+  --border: #2a3548;
+  --text: #e8edf5;
+  --muted: #8b9cb3;
+  --accent: #00d4aa;
+  --accent-dim: #00a888;
+  --deny: #ff4d6a;
+  --warn: #ffb347;
+  --hub: #5b8def;
+  --font: 'Outfit', system-ui, sans-serif;
+  --mono: 'JetBrains Mono', monospace;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  background-image:
+    radial-gradient(ellipse at 20% 0%, rgba(0, 212, 170, 0.08) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 100%, rgba(91, 141, 239, 0.06) 0%, transparent 50%);
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 2rem;
+  border-bottom: 1px solid var(--border);
+  background: rgba(17, 24, 39, 0.8);
+  backdrop-filter: blur(12px);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.brand-icon {
+  width: 40px;
+  height: 40px;
+  color: var(--accent);
+}
+
+.brand h1 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  color: var(--accent);
+}
+
+.tagline {
+  font-size: 0.75rem;
+  color: var(--muted);
+  letter-spacing: 0.05em;
+}
+
+.status-pill {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  padding: 0.35rem 0.85rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+}
+
+.status-pill.connected { border-color: var(--accent); color: var(--accent); }
+.status-pill.node { border-color: var(--hub); color: var(--hub); }
+
+.layout {
+  display: grid;
+  grid-template-columns: 280px 1fr 1fr;
+  grid-template-rows: auto auto 1fr;
+  gap: 1rem;
+  padding: 1.25rem 2rem 2rem;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1.25rem;
+}
+
+.panel h2 {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+  margin-bottom: 1rem;
+  font-weight: 600;
+}
+
+.arch-panel { grid-row: span 2; }
+
+.arch-stack { display: flex; flex-direction: column; align-items: center; gap: 0.15rem; }
+
+.arch-layer {
+  width: 100%;
+  text-align: center;
+  padding: 0.5rem 0.75rem;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.78rem;
+  font-family: var(--mono);
+}
+
+.arch-layer.accent { border-color: rgba(0, 212, 170, 0.3); color: var(--accent); }
+.arch-layer.highlight { background: rgba(0, 212, 170, 0.12); border-color: var(--accent); font-weight: 600; }
+
+.arch-arrow { color: var(--muted); font-size: 0.7rem; }
+
+.arch-note {
+  margin-top: 1rem;
+  font-size: 0.72rem;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.topology-panel { grid-column: span 2; }
+
+.topology-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.75rem;
+}
+
+.device-card {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1rem;
+  text-align: center;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.device-card.online { border-color: var(--accent); box-shadow: 0 0 20px rgba(0, 212, 170, 0.15); }
+.device-card.blocked { border-color: var(--deny); opacity: 0.85; }
+.device-card.current { outline: 2px solid var(--hub); outline-offset: 2px; }
+
+.device-icon {
+  width: 48px;
+  height: 48px;
+  margin: 0 auto 0.5rem;
+  color: var(--accent);
+}
+
+.device-card.blocked .device-icon { color: var(--deny); }
+
+.device-card h3 { font-size: 0.95rem; margin-bottom: 0.2rem; }
+.device-card .role { font-size: 0.7rem; color: var(--muted); margin-bottom: 0.4rem; }
+.device-card .desc { font-size: 0.68rem; color: var(--muted); line-height: 1.4; }
+
+.device-status {
+  display: inline-block;
+  margin-top: 0.5rem;
+  font-family: var(--mono);
+  font-size: 0.65rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+}
+
+.device-status.online { background: rgba(0, 212, 170, 0.15); color: var(--accent); }
+.device-status.offline { background: rgba(139, 156, 179, 0.15); color: var(--muted); }
+.device-status.denied { background: rgba(255, 77, 106, 0.15); color: var(--deny); }
+
+.role-badge {
+  margin-top: 0.75rem;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--hub);
+}
+
+.stats-panel { grid-column: span 2; }
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.75rem;
+}
+
+.stat-card {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1rem;
+  text-align: center;
+}
+
+.stat-card.deny { border-color: rgba(255, 77, 106, 0.3); }
+
+.stat-value {
+  display: block;
+  font-family: var(--mono);
+  font-size: 1.6rem;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.stat-card.deny .stat-value { color: var(--deny); }
+
+.stat-label {
+  display: block;
+  font-size: 0.68rem;
+  color: var(--muted);
+  margin-top: 0.25rem;
+}
+
+.send-panel { grid-column: span 2; }
+
+.send-form {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.send-form select,
+.send-form input {
+  flex: 1;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.6rem 0.85rem;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 0.8rem;
+}
+
+.send-form select { flex: 0 0 200px; }
+
+.send-form button,
+.scenario-btn {
+  background: var(--accent);
+  color: var(--bg);
+  border: none;
+  border-radius: 6px;
+  padding: 0.6rem 1.2rem;
+  font-family: var(--font);
+  font-weight: 600;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.send-form button:hover { background: var(--accent-dim); }
+.send-form button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.demo-scenarios { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+
+.scenario-btn {
+  background: var(--surface2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  padding: 0.4rem 0.75rem;
+  font-size: 0.72rem;
+}
+
+.scenario-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+.send-hint { margin-top: 0.5rem; font-size: 0.72rem; color: var(--muted); }
+
+.log-panel { grid-column: span 3; min-height: 280px; }
+
+.log-container {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  max-height: 320px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.log-entry {
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+  border-left: 3px solid var(--border);
+  background: var(--surface2);
+  animation: fadeIn 0.25s ease;
+}
+
+@keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+
+.log-entry.packet { border-left-color: var(--accent); }
+.log-entry.deny { border-left-color: var(--deny); }
+.log-entry.auth { border-left-color: var(--hub); }
+.log-entry.forward { border-left-color: var(--warn); }
+
+.log-entry .time { color: var(--muted); margin-right: 0.5rem; }
+.log-entry .device { color: var(--hub); }
+.log-entry .policy-allow { color: var(--accent); }
+.log-entry .policy-deny { color: var(--deny); }
+.log-entry .stats { color: var(--muted); font-size: 0.68rem; margin-top: 0.2rem; }
+
+footer {
+  display: flex;
+  justify-content: space-between;
+  padding: 1rem 2rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+@media (max-width: 1100px) {
+  .layout { grid-template-columns: 1fr; }
+  .topology-grid { grid-template-columns: repeat(2, 1fr); }
+  .stats-grid { grid-template-columns: repeat(2, 1fr); }
+  .arch-panel, .log-panel, .send-panel, .stats-panel, .topology-panel { grid-column: span 1; }
+}
+
+```
+
+# File: .\zton\crypto.py
+```
+"""Mutual authentication and per-packet encryption for ZTON."""
+
+import os
+import zlib
+from dataclasses import dataclass
+
+from cryptography.hazmat.primitives.asymmetric.ed25519 import (
+    Ed25519PrivateKey,
+    Ed25519PublicKey,
+)
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from cryptography.hazmat.primitives import serialization
+
+
+@dataclass
+class KeyPair:
+    private_key: Ed25519PrivateKey
+    public_key: Ed25519PublicKey
+
+    def public_bytes(self) -> bytes:
+        return self.public_key.public_bytes(
+            encoding=serialization.Encoding.Raw,
+            format=serialization.PublicFormat.Raw,
+        )
+
+    def sign(self, data: bytes) -> bytes:
+        return self.private_key.sign(data)
+
+    @staticmethod
+    def generate() -> "KeyPair":
+        private_key = Ed25519PrivateKey.generate()
+        return KeyPair(private_key=private_key, public_key=private_key.public_key())
+
+    @staticmethod
+    def from_private_bytes(data: bytes) -> "KeyPair":
+        private_key = Ed25519PrivateKey.from_private_bytes(data)
+        return KeyPair(private_key=private_key, public_key=private_key.public_key())
+
+
+@dataclass
+class SessionCrypto:
+    """Per-session AES-GCM encryptor with monotonic sequence numbers."""
+
+    key: bytes
+    send_seq: int = 0
+    recv_high_water: int = -1
+
+    def __post_init__(self) -> None:
+        self._aes = AESGCM(self.key)
+
+    def encrypt_payload(self, plaintext: bytes, compress: bool = True) -> tuple[bytes, dict]:
+        original_size = len(plaintext)
+        if compress:
+            payload = zlib.compress(plaintext, level=6)
+        else:
+            payload = plaintext
+        compressed_size = len(payload)
+
+        self.send_seq += 1
+        nonce = self.send_seq.to_bytes(12, "big")
+        ciphertext = self._aes.encrypt(nonce, payload, None)
+
+        stats = {
+            "original_bytes": original_size,
+            "compressed_bytes": compressed_size,
+            "encrypted_bytes": len(ciphertext),
+            "sequence": self.send_seq,
+            "compressed": compress,
+        }
+        return ciphertext, stats
+
+    def decrypt_payload(self, ciphertext: bytes, sequence: int) -> tuple[bytes, dict]:
+        if sequence <= self.recv_high_water:
+            raise ReplayError(f"Replay detected: seq {sequence} <= {self.recv_high_water}")
+
+        nonce = sequence.to_bytes(12, "big")
+        compressed = self._aes.decrypt(nonce, ciphertext, None)
+        self.recv_high_water = sequence
+
+        try:
+            plaintext = zlib.decompress(compressed)
+            was_compressed = True
+        except zlib.error:
+            plaintext = compressed
+            was_compressed = False
+
+        stats = {
+            "original_bytes": len(plaintext),
+            "compressed_bytes": len(compressed),
+            "encrypted_bytes": len(ciphertext),
+            "sequence": sequence,
+            "compressed": was_compressed,
+        }
+        return plaintext, stats
+
+
+class ReplayError(Exception):
+    pass
+
+
+def verify_signature(public_key_bytes: bytes, signature: bytes, data: bytes) -> bool:
+    try:
+        public_key = Ed25519PublicKey.from_public_bytes(public_key_bytes)
+        public_key.verify(signature, data)
+        return True
+    except Exception:
+        return False
+
+
+def private_key_bytes(keypair: KeyPair) -> bytes:
+    return keypair.private_key.private_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PrivateFormat.Raw,
+        encryption_algorithm=serialization.NoEncryption(),
+    )
+
+
+def derive_session_key(local_public: bytes, peer_public: bytes) -> bytes:
+    """Derive a shared 256-bit session key from both parties' public keys."""
+    import hashlib
+    keys = sorted([local_public, peer_public])
+    material = keys[0] + keys[1] + b"zton-session-v1"
+    return hashlib.sha256(material).digest()
+
+
+def load_or_create_keypair(path: str) -> KeyPair:
+    if os.path.exists(path):
+        with open(path, "rb") as f:
+            return KeyPair.from_private_bytes(f.read())
+    kp = KeyPair.generate()
+    with open(path, "wb") as f:
+        f.write(kp.private_key.private_bytes(
+            encoding=serialization.Encoding.Raw,
+            format=serialization.PrivateFormat.Raw,
+            encryption_algorithm=serialization.NoEncryption(),
+        ))
+    return kp
+
+```
+
+# File: .\zton\events.py
+```
+"""Event bus for live dashboard updates."""
+
+import asyncio
+import json
+from dataclasses import dataclass, asdict
+from datetime import datetime
+from typing import Any
+
+
+@dataclass
+class OverlayEvent:
+    kind: str
+    device_id: str
+    device_name: str
+    message: str
+    policy: str = ""
+    encrypted: bool = False
+    stats: dict | None = None
+    timestamp: str = ""
+
+    def __post_init__(self) -> None:
+        if not self.timestamp:
+            self.timestamp = datetime.utcnow().isoformat() + "Z"
+
+    def to_json(self) -> str:
+        return json.dumps(asdict(self))
+
+
+class EventBus:
+    def __init__(self) -> None:
+        self._subscribers: list[asyncio.Queue] = []
+        self._history: list[dict] = []
+        self._max_history = 200
+
+    def subscribe(self) -> asyncio.Queue:
+        q: asyncio.Queue = asyncio.Queue(maxsize=100)
+        self._subscribers.append(q)
+        return q
+
+    def unsubscribe(self, q: asyncio.Queue) -> None:
+        if q in self._subscribers:
+            self._subscribers.remove(q)
+
+    def _store(self, data: dict) -> None:
+        self._history.append(data)
+        if len(self._history) > self._max_history:
+            self._history = self._history[-self._max_history :]
+
+    def publish_sync(self, event: OverlayEvent) -> None:
+        data = json.loads(event.to_json())
+        self._store(data)
+        for q in list(self._subscribers):
+            try:
+                q.put_nowait(data)
+            except (asyncio.QueueFull, AttributeError):
+                pass
+
+    async def publish(self, event: OverlayEvent) -> None:
+        data = json.loads(event.to_json())
+        self._store(data)
+        for q in list(self._subscribers):
+            try:
+                q.put_nowait(data)
+            except asyncio.QueueFull:
+                pass
+
+    def history(self) -> list[dict]:
+        return list(self._history)
+
+    def stats(self) -> dict[str, Any]:
+        packets = [e for e in self._history if e.get("kind") == "packet"]
+        denied = [e for e in self._history if e.get("kind") == "deny"]
+        return {
+            "total_events": len(self._history),
+            "packets_forwarded": len([p for p in packets if p.get("policy") == "ALLOW"]),
+            "packets_denied": len(denied),
+        }
+
+```
+
+# File: .\zton\hub.py
+```
+"""ZTON overlay hub — UDP relay with policy and mutual authentication."""
+
+import asyncio
+import base64
+import socket
+import threading
+import time
+from dataclasses import dataclass, field
+
+from zton.crypto import SessionCrypto, ReplayError, verify_signature, load_or_create_keypair, derive_session_key
+from zton.events import EventBus, OverlayEvent
+from zton.packet import ZtonPacket, PacketType
+from zton.policy import PolicyEngine
+
+
+@dataclass
+class PeerState:
+    device_id: str
+    device_name: str
+    addr: tuple[str, int]
+    public_key: bytes
+    session: SessionCrypto | None = None
+    last_seen: float = 0.0
+    authorized: bool = True
+
+
+class ZtonHub:
+    def __init__(
+        self,
+        device_id: str = "laptop-a",
+        device_name: str = "Laptop A (Hub)",
+        udp_port: int = 9999,
+        key_path: str | None = None,
+        loop: asyncio.AbstractEventLoop | None = None,
+    ) -> None:
+        self.device_id = device_id
+        self.device_name = device_name
+        self.udp_port = udp_port
+        import os
+        if key_path is None:
+            keys_dir = os.getenv("ZTON_KEYS_DIR", ".")
+            key_path = os.path.join(keys_dir, "zton_hub.key")
+        self.keypair = load_or_create_keypair(key_path)
+        self.policy = PolicyEngine()
+        self.events = EventBus()
+        self.peers: dict[str, PeerState] = {}
+        self._sessions: dict[str, SessionCrypto] = {}
+        self._loop = loop
+        self._sock: socket.socket | None = None
+        self._thread: threading.Thread | None = None
+        self._running = False
+        self._packets_total = 0
+        self._packets_denied = 0
+
+    def configure_peers(self, peer_configs: list[dict]) -> None:
+        for cfg in peer_configs:
+            self.policy.register_device(
+                cfg["device_id"],
+                cfg.get("authorized", True),
+                cfg.get("targets", []),
+            )
+
+    def start(self) -> None:
+        self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self._sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self._sock.bind(("0.0.0.0", self.udp_port))
+        self._running = True
+        self._thread = threading.Thread(target=self._recv_loop, daemon=True)
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._running = False
+        if self._sock:
+            self._sock.close()
+
+    def _emit(self, kind: str, device_id: str, device_name: str, message: str, **kwargs) -> None:
+        event = OverlayEvent(kind=kind, device_id=device_id, device_name=device_name, message=message, **kwargs)
+        if self._loop and self._loop.is_running():
+            asyncio.run_coroutine_threadsafe(self.events.publish(event), self._loop)
+        else:
+            self.events.publish_sync(event)
+
+    def _recv_loop(self) -> None:
+        assert self._sock
+        while self._running:
+            try:
+                data, addr = self._sock.recvfrom(65535)
+                self._handle_packet(data, addr)
+            except OSError:
+                break
+
+    def _handle_packet(self, data: bytes, addr: tuple[str, int]) -> None:
+        try:
+            pkt = ZtonPacket.from_bytes(data)
+        except Exception as exc:
+            self._emit("deny", "unknown", "unknown", f"Malformed packet: {exc}", policy="DENY")
+            return
+
+        pub_key = base64.b64decode(pkt.public_key)
+        sig = base64.b64decode(pkt.signature)
+        if not verify_signature(pub_key, sig, pkt.signing_bytes()):
+            self._packets_denied += 1
+            self._emit("deny", pkt.device_id, pkt.device_name, "Mutual auth failed — invalid signature", policy="DENY")
+            self._send_deny(addr, pkt, "Invalid Ed25519 signature")
+            return
+
+        if pkt.type == PacketType.HELLO.value:
+            self._handle_hello(pkt, addr, pub_key)
+        elif pkt.type == PacketType.DATA.value:
+            self._handle_data(pkt, addr, pub_key)
+        elif pkt.type == PacketType.HEARTBEAT.value:
+            if pkt.device_id in self.peers:
+                self.peers[pkt.device_id].last_seen = time.time()
+
+    def _handle_hello(self, pkt: ZtonPacket, addr: tuple[str, int], pub_key: bytes) -> None:
+        decision = self.policy.can_send(pkt.device_id)
+        session_key = derive_session_key(self.keypair.public_bytes(), pub_key)
+        session = SessionCrypto(key=session_key)
+
+        self.peers[pkt.device_id] = PeerState(
+            device_id=pkt.device_id,
+            device_name=pkt.device_name,
+            addr=addr,
+            public_key=pub_key,
+            session=session,
+            last_seen=time.time(),
+            authorized=decision.allowed,
+        )
+        self._sessions[pkt.device_id] = session
+
+        if decision.allowed:
+            self._emit("auth", pkt.device_id, pkt.device_name,
+                       f"Mutual authentication succeeded — {decision.reason}", policy="ALLOW")
+        else:
+            self._emit("deny", pkt.device_id, pkt.device_name,
+                       f"Authentication OK but policy denied — {decision.reason}", policy="DENY")
+
+        ack = ZtonPacket.build(
+            PacketType.HELLO_ACK,
+            self.device_id,
+            self.device_name,
+            pkt.session_id,
+            0,
+            base64.b64encode(self.keypair.public_bytes()).decode(),
+            sign_fn=self.keypair.sign,
+        )
+        ack.policy_result = "ALLOW" if decision.allowed else "DENY"
+        self._send(ack, addr)
+
+    def _handle_data(self, pkt: ZtonPacket, addr: tuple[str, int], pub_key: bytes) -> None:
+        self._packets_total += 1
+        send_decision = self.policy.can_send(pkt.device_id)
+        if not send_decision.allowed:
+            self._packets_denied += 1
+            self._emit("deny", pkt.device_id, pkt.device_name,
+                       f"Per-packet policy deny — {send_decision.reason}", policy="DENY")
+            self._send_deny(addr, pkt, send_decision.reason)
+            return
+
+        route_decision = self.policy.can_forward(pkt.device_id, pkt.target_id)
+        if not route_decision.allowed:
+            self._packets_denied += 1
+            self._emit("deny", pkt.device_id, pkt.device_name,
+                       f"Route denied — {route_decision.reason}", policy="DENY")
+            self._send_deny(addr, pkt, route_decision.reason)
+            return
+
+        session = self._sessions.get(pkt.device_id)
+        if not session:
+            self._emit("deny", pkt.device_id, pkt.device_name, "No session — HELLO required", policy="DENY")
+            return
+
+        ciphertext = base64.b64decode(pkt.payload_b64)
+        try:
+            plaintext, stats = session.decrypt_payload(ciphertext, pkt.sequence)
+        except ReplayError as e:
+            self._packets_denied += 1
+            self._emit("deny", pkt.device_id, pkt.device_name, str(e), policy="DENY")
+            return
+        except Exception as e:
+            self._packets_denied += 1
+            self._emit("deny", pkt.device_id, pkt.device_name, f"Decryption failed — {e}", policy="DENY")
+            return
+
+        message_text = plaintext.decode("utf-8", errors="replace")
+        self._emit(
+            "packet",
+            pkt.device_id,
+            pkt.device_name,
+            message_text,
+            policy="ALLOW",
+            encrypted=True,
+            stats=stats,
+        )
+
+        if pkt.target_id and pkt.target_id in self.peers:
+            target = self.peers[pkt.target_id]
+            if target.authorized:
+                forward_pkt = ZtonPacket.build(
+                    PacketType.DATA,
+                    self.device_id,
+                    self.device_name,
+                    pkt.session_id,
+                    pkt.sequence,
+                    base64.b64encode(self.keypair.public_bytes()).decode(),
+                    payload=ciphertext,
+                    target_id=pkt.target_id,
+                    sign_fn=self.keypair.sign,
+                )
+                forward_pkt.stats = stats
+                self._send(forward_pkt, target.addr)
+                self._emit("forward", pkt.device_id, target.device_name,
+                           f"Forwarded encrypted packet → {target.device_name}", policy="ALLOW", encrypted=True, stats=stats)
+
+    def _send_deny(self, addr: tuple[str, int], orig: ZtonPacket, reason: str) -> None:
+        deny = ZtonPacket.build(
+            PacketType.DENY,
+            self.device_id,
+            self.device_name,
+            orig.session_id,
+            orig.sequence,
+            base64.b64encode(self.keypair.public_bytes()).decode(),
+            payload=reason.encode(),
+            sign_fn=self.keypair.sign,
+        )
+        deny.policy_result = "DENY"
+        self._send(deny, addr)
+
+    def _send(self, pkt: ZtonPacket, addr: tuple[str, int]) -> None:
+        if self._sock:
+            self._sock.sendto(pkt.to_bytes(), addr)
+
+    def status(self) -> dict:
+        return {
+            "hub_id": self.device_id,
+            "hub_name": self.device_name,
+            "udp_port": self.udp_port,
+            "public_key": base64.b64encode(self.keypair.public_bytes()).decode(),
+            "peers": [
+                {
+                    "device_id": p.device_id,
+                    "device_name": p.device_name,
+                    "addr": f"{p.addr[0]}:{p.addr[1]}",
+                    "authorized": p.authorized,
+                    "last_seen": p.last_seen,
+                }
+                for p in self.peers.values()
+            ],
+            "policy": self.policy.snapshot(),
+            "stats": {
+                "packets_total": self._packets_total,
+                "packets_denied": self._packets_denied,
+                **self.events.stats(),
+            },
+        }
+
+```
+
+# File: .\zton\node.py
+```
+"""ZTON overlay node — lightweight UDP client for edge devices."""
+
+import base64
+import socket
+import threading
+import time
+import uuid
+
+from zton.crypto import SessionCrypto, load_or_create_keypair, derive_session_key
+from zton.packet import ZtonPacket, PacketType
+
+
+class ZtonNode:
+    def __init__(
+        self,
+        device_id: str,
+        device_name: str,
+        hub_host: str,
+        hub_port: int = 9999,
+        authorized: bool = True,
+        targets: list[str] | None = None,
+        key_path: str | None = None,
+    ) -> None:
+        self.device_id = device_id
+        self.device_name = device_name
+        self.hub_host = hub_host
+        self.hub_port = hub_port
+        self.authorized = authorized
+        self.targets = targets or []
+        import os
+        if key_path is None:
+            keys_dir = os.getenv("ZTON_KEYS_DIR", ".")
+            key_path = os.path.join(keys_dir, f"zton_{device_id}.key")
+        self.keypair = load_or_create_keypair(key_path)
+        self.session_id = str(uuid.uuid4())[:8]
+        self._session: SessionCrypto | None = None
+        self._sequence = 0
+        self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self._sock.bind(("0.0.0.0", 0))
+        self._running = False
+        self._thread: threading.Thread | None = None
+        self._last_events: list[dict] = []
+        self._registered = False
+        self._policy_result = "PENDING"
+        self._hub_public_key: bytes | None = None
+
+    @property
+    def local_port(self) -> int:
+        return self._sock.getsockname()[1]
+
+    def start(self) -> None:
+        self._running = True
+        self._thread = threading.Thread(target=self._recv_loop, daemon=True)
+        self._thread.start()
+        self.register()
+
+    def stop(self) -> None:
+        self._running = False
+        self._sock.close()
+
+    def register(self) -> None:
+        pkt = ZtonPacket.build(
+            PacketType.HELLO,
+            self.device_id,
+            self.device_name,
+            self.session_id,
+            0,
+            base64.b64encode(self.keypair.public_bytes()).decode(),
+            sign_fn=self.keypair.sign,
+        )
+        self._send(pkt)
+
+    def send_message(self, text: str, target_id: str = "") -> dict:
+        if not self._session:
+            if not self._hub_public_key:
+                raise RuntimeError("Not registered with hub yet")
+            session_key = derive_session_key(self.keypair.public_bytes(), self._hub_public_key)
+            self._session = SessionCrypto(key=session_key)
+
+        self._sequence += 1
+        ciphertext, stats = self._session.encrypt_payload(text.encode())
+
+        pkt = ZtonPacket.build(
+            PacketType.DATA,
+            self.device_id,
+            self.device_name,
+            self.session_id,
+            self._sequence,
+            base64.b64encode(self.keypair.public_bytes()).decode(),
+            payload=ciphertext,
+            target_id=target_id,
+            sign_fn=self.keypair.sign,
+        )
+        pkt.stats = stats
+        self._send(pkt)
+        return stats
+
+    def _send(self, pkt: ZtonPacket) -> None:
+        self._sock.sendto(pkt.to_bytes(), (self.hub_host, self.hub_port))
+
+    def _recv_loop(self) -> None:
+        while self._running:
+            try:
+                self._sock.settimeout(2.0)
+                data, _ = self._sock.recvfrom(65535)
+                self._handle_packet(data)
+            except socket.timeout:
+                self._send_heartbeat()
+            except OSError:
+                break
+
+    def _send_heartbeat(self) -> None:
+        pkt = ZtonPacket.build(
+            PacketType.HEARTBEAT,
+            self.device_id,
+            self.device_name,
+            self.session_id,
+            0,
+            base64.b64encode(self.keypair.public_bytes()).decode(),
+            sign_fn=self.keypair.sign,
+        )
+        self._send(pkt)
+
+    def _handle_packet(self, data: bytes) -> None:
+        pkt = ZtonPacket.from_bytes(data)
+        if pkt.type == PacketType.HELLO_ACK.value:
+            self._registered = True
+            self._policy_result = pkt.policy_result
+            self._hub_public_key = base64.b64decode(pkt.public_key)
+            session_key = derive_session_key(self.keypair.public_bytes(), self._hub_public_key)
+            self._session = SessionCrypto(key=session_key)
+            self._add_event("auth", f"Registered with hub — policy: {pkt.policy_result}")
+        elif pkt.type == PacketType.DENY.value:
+            reason = base64.b64decode(pkt.payload_b64).decode()
+            self._add_event("deny", reason)
+        elif pkt.type == PacketType.DATA.value:
+            if self._session:
+                ciphertext = base64.b64decode(pkt.payload_b64)
+                try:
+                    plaintext, stats = self._session.decrypt_payload(ciphertext, pkt.sequence)
+                    self._add_event("packet", plaintext.decode(), stats=stats)
+                except Exception as e:
+                    self._add_event("deny", str(e))
+
+    def _add_event(self, kind: str, message: str, stats: dict | None = None) -> None:
+        self._last_events.append({
+            "kind": kind,
+            "message": message,
+            "stats": stats,
+            "timestamp": time.time(),
+        })
+        if len(self._last_events) > 50:
+            self._last_events = self._last_events[-50:]
+
+    def status(self) -> dict:
+        return {
+            "device_id": self.device_id,
+            "device_name": self.device_name,
+            "hub": f"{self.hub_host}:{self.hub_port}",
+            "authorized": self.authorized,
+            "registered": self._registered,
+            "policy_result": self._policy_result,
+            "local_port": self.local_port,
+            "targets": self.targets,
+            "events": self._last_events[-10:],
+        }
+
+```
+
+# File: .\zton\packet.py
+```
+"""ZTON wire format for UDP overlay packets."""
+
+import base64
+import json
+import time
+from dataclasses import dataclass, asdict
+from enum import Enum
+from typing import Any
+
+
+class PacketType(str, Enum):
+    HELLO = "HELLO"
+    HELLO_ACK = "HELLO_ACK"
+    DATA = "DATA"
+    DENY = "DENY"
+    HEARTBEAT = "HEARTBEAT"
+
+
+@dataclass
+class ZtonPacket:
+    type: str
+    device_id: str
+    device_name: str
+    session_id: str
+    sequence: int
+    timestamp: float
+    public_key: str
+    signature: str
+    payload_b64: str
+    target_id: str = ""
+    policy_result: str = ""
+    stats: dict | None = None
+
+    def signing_bytes(self) -> bytes:
+        core = {
+            "type": self.type,
+            "device_id": self.device_id,
+            "session_id": self.session_id,
+            "sequence": self.sequence,
+            "timestamp": self.timestamp,
+            "payload_b64": self.payload_b64,
+            "target_id": self.target_id,
+        }
+        return json.dumps(core, sort_keys=True, separators=(",", ":")).encode()
+
+    def to_bytes(self) -> bytes:
+        return json.dumps(asdict(self), separators=(",", ":")).encode()
+
+    @staticmethod
+    def from_bytes(data: bytes) -> "ZtonPacket":
+        obj = json.loads(data.decode())
+        return ZtonPacket(**{k: obj[k] for k in ZtonPacket.__dataclass_fields__ if k in obj})
+
+    @staticmethod
+    def build(
+        packet_type: PacketType,
+        device_id: str,
+        device_name: str,
+        session_id: str,
+        sequence: int,
+        public_key_b64: str,
+        payload: bytes = b"",
+        target_id: str = "",
+        sign_fn=None,
+    ) -> "ZtonPacket":
+        pkt = ZtonPacket(
+            type=packet_type.value,
+            device_id=device_id,
+            device_name=device_name,
+            session_id=session_id,
+            sequence=sequence,
+            timestamp=time.time(),
+            public_key=public_key_b64,
+            signature="",
+            payload_b64=base64.b64encode(payload).decode(),
+            target_id=target_id,
+        )
+        if sign_fn:
+            sig = sign_fn(pkt.signing_bytes())
+            pkt.signature = base64.b64encode(sig).decode()
+        return pkt
+
+```
+
+# File: .\zton\policy.py
+```
+"""Zero-trust policy engine for ZTON overlay."""
+
+from dataclasses import dataclass, field
+
+
+@dataclass
+class PolicyDecision:
+    allowed: bool
+    reason: str
+    rule: str
+
+
+@dataclass
+class PolicyEngine:
+    """Identity-aware forwarding policy."""
+
+    authorized_devices: set[str] = field(default_factory=set)
+    blocked_devices: set[str] = field(default_factory=set)
+    allowed_targets: dict[str, set[str]] = field(default_factory=dict)
+
+    def register_device(self, device_id: str, authorized: bool, targets: list[str] | None = None) -> None:
+        if authorized:
+            self.authorized_devices.add(device_id)
+            self.blocked_devices.discard(device_id)
+            if targets:
+                self.allowed_targets[device_id] = set(targets)
+        else:
+            self.blocked_devices.add(device_id)
+            self.authorized_devices.discard(device_id)
+
+    def can_send(self, device_id: str) -> PolicyDecision:
+        if device_id in self.blocked_devices:
+            return PolicyDecision(False, "Device is explicitly unauthorized", "deny-list")
+        if device_id not in self.authorized_devices:
+            return PolicyDecision(False, "Device not in authorized identity set", "identity-policy")
+        return PolicyDecision(True, "Identity verified and authorized", "allow-list")
+
+    def can_forward(self, sender_id: str, target_id: str) -> PolicyDecision:
+        send_decision = self.can_send(sender_id)
+        if not send_decision.allowed:
+            return send_decision
+        if not target_id:
+            return PolicyDecision(True, "Broadcast to hub permitted", "hub-relay")
+        allowed = self.allowed_targets.get(sender_id, set())
+        if target_id in allowed or target_id == "hub":
+            return PolicyDecision(True, f"Route {sender_id} → {target_id} permitted", "route-policy")
+        return PolicyDecision(False, f"Route {sender_id} → {target_id} denied by policy", "route-policy")
+
+    def snapshot(self) -> dict:
+        return {
+            "authorized": sorted(self.authorized_devices),
+            "blocked": sorted(self.blocked_devices),
+            "routes": {k: sorted(v) for k, v in self.allowed_targets.items()},
+        }
+
+```
+
+# File: .\zton\__init__.py
+```
+"""ZTON — Zero Trust Overlay Network over raw UDP."""
+
+```
+

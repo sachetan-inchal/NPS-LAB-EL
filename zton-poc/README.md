@@ -2,7 +2,90 @@
 
 **A Zero Trust Overlay Network Built on Raw UDP Sockets with Mutual Authentication and Per-Packet Encryption**
 
-Custom-branded web demo for the NPS Lab. No third-party console logos — this is a standalone ZTON UI.
+Enterprise-grade **SOC (Security Operations Center) dashboard** for final-year engineering evaluation. No third-party console logos.
+
+## SOC Dashboard (Primary UI)
+
+### Windows (PowerShell) — use these commands
+
+```powershell
+cd zton-poc
+.\start-hub.ps1
+# Open http://localhost:8080
+```
+
+Or set env vars manually in PowerShell:
+
+```powershell
+cd zton-poc
+$env:ZTON_ROLE = "hub"
+python main.py
+```
+
+**Do not use** `ZTON_ROLE=hub python main.py` — that syntax is Linux/Mac only.
+
+### Windows CMD
+
+```cmd
+cd zton-poc
+start-hub.bat
+```
+
+### 4 devices (4 PowerShell windows)
+
+```powershell
+cd zton-poc
+.\start-all.ps1
+```
+
+### Linux / Mac
+
+```bash
+cd zton-poc
+ZTON_ROLE=hub python main.py
+```
+
+### Build dashboard manually
+
+```powershell
+cd zton-poc\dashboard
+npm install
+npm run build
+cd ..
+.\start-hub.ps1
+```
+
+Or with Docker (builds dashboard automatically):
+
+```bash
+docker compose up --build laptop-a
+# Open http://localhost:8080
+```
+
+### Dashboard Features
+
+| Panel | Description |
+|-------|-------------|
+| **System Status** | Controller, Router, Overlay, Encryption, Connected Nodes |
+| **Packet Statistics** | Live animated counters (sent, accepted, dropped, replay blocked) |
+| **Traffic Analytics** | Recharts: PPS, accepted vs dropped, replay attempts, volume |
+| **Network Topology** | React Flow interactive graph with animated packet flows |
+| **Packet Generator** | Configurable load test (count, payload type, size, replay %) |
+| **Live Packet Stream** | Real-time SOC table with encryption decisions |
+| **Security Events** | SOC-style feed (INFO / SUCCESS / WARNING / CRITICAL) |
+| **Encryption Visualizer** | Animated plaintext → ciphertext → UDP → receiver pipeline |
+| **Zero Trust Policies** | Visual allow/deny policy engine |
+| **Demo Scenarios** | One-click: Normal Traffic, Replay Attack, Video Stream, Unauthorized User |
+| **Presentation Mode** | Fullscreen projector layout with large metrics |
+
+Dev mode (hot reload):
+
+```bash
+# Terminal 1: backend
+ZTON_ROLE=hub python main.py
+# Terminal 2: frontend
+cd dashboard && npm run dev   # http://localhost:5173
+```
 
 ## 4-Device Scenario
 

@@ -6,14 +6,20 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+
+from server.soc_api import router as soc_router
+from server.live_api import router as live_router
+from server.device_api import router as device_router
 
 from zton.hub import ZtonHub
 from zton.node import ZtonNode
 
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
+DASHBOARD_DIR = Path(__file__).resolve().parent.parent / "dashboard" / "dist"
 
 # Global runtime state
 hub: ZtonHub | None = None
@@ -104,12 +110,33 @@ async def lifespan(app: FastAPI):
         node.stop()
 
 
-app = FastAPI(title="ZTON Demo", lifespan=lifespan)
+app = FastAPI(title="ZTON SOC Dashboard", lifespan=lifespan)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+app.include_router(soc_router)
+app.include_router(live_router)
+app.include_router(device_router)
 app.mount("/static", StaticFiles(directory=WEB_DIR), name="static")
+if DASHBOARD_DIR.exists():
+    app.mount("/assets", StaticFiles(directory=DASHBOARD_DIR / "assets"), name="dashboard-assets")
 
 
 @app.get("/")
 async def index():
+    if (DASHBOARD_DIR / "index.html").exists():
+        return FileResponse(DASHBOARD_DIR / "index.html")
+    return FileResponse(WEB_DIR / "index.html")
+
+
+@app.get("/soc")
+async def soc_dashboard():
+    if (DASHBOARD_DIR / "index.html").exists():
+        return FileResponse(DASHBOARD_DIR / "index.html")
     return FileResponse(WEB_DIR / "index.html")
 
 

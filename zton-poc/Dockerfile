@@ -1,3 +1,12 @@
+# Stage 1: Build SOC dashboard
+FROM node:20-slim AS dashboard-build
+WORKDIR /dashboard
+COPY dashboard/package.json dashboard/package-lock.json* ./
+RUN npm install
+COPY dashboard/ .
+RUN npm run build
+
+# Stage 2: Python runtime
 FROM python:3.12-slim
 
 WORKDIR /app
@@ -9,6 +18,7 @@ COPY zton/ zton/
 COPY server/ server/
 COPY web/ web/
 COPY main.py .
+COPY --from=dashboard-build /dashboard/dist ./dashboard/dist
 
 ENV PYTHONPATH=/app
 ENV ZTON_WEB_PORT=8080

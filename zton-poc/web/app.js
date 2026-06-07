@@ -189,7 +189,8 @@ sendBtn.addEventListener('click', async () => {
 document.querySelectorAll('.scenario-btn').forEach((btn) => {
   btn.addEventListener('click', () => {
     $('#message-input').value = btn.dataset.msg;
-    if (role === 'node') sendBtn.click();
+    $('#message-input').focus();
+    sendHint.textContent = 'Message filled — edit if needed, then click Send.';
   });
 });
 

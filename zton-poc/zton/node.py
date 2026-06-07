@@ -10,6 +10,9 @@ from zton.crypto import SessionCrypto, load_or_create_keypair, derive_session_ke
 from zton.packet import ZtonPacket, PacketType
 
 
+from zton.timeutil import utc_now_iso
+
+
 class ZtonNode:
     def __init__(
         self,
@@ -42,7 +45,10 @@ class ZtonNode:
         self._last_events: list[dict] = []
         self._registered = False
         self._policy_result = "PENDING"
-        self._hub_public_key: bytes | None = None
+        self._packets_sent = 0
+        self._packets_accepted = 0
+        self._packets_denied = 0
+        self._pending_denies = False
 
     @property
     def local_port(self) -> int:
@@ -93,7 +99,47 @@ class ZtonNode:
         )
         pkt.stats = stats
         self._send(pkt)
-        return stats
+        self._packets_sent += 1
+        self._pending_denies = True
+
+        ct_b64 = base64.b64encode(ciphertext).decode()
+        target_label = "Hub (Laptop A — port 8080)" if not target_id else f"{target_id} (forwarded by hub)"
+        result = {
+            **stats,
+            "plaintext": text,
+            "ciphertext_preview": ct_b64[:56] + ("…" if len(ct_b64) > 56 else ""),
+            "ciphertext_length": len(ciphertext),
+            "target": target_id or "hub",
+            "target_label": target_label,
+            "session_id": self.session_id,
+            "sequence": self._sequence,
+            "encryption": "AES-GCM",
+            "authentication": "Ed25519 signature",
+            "transport": "Raw UDP",
+        }
+
+        self._add_event(
+            "encrypted",
+            f"Plaintext → Encrypted ({stats['encrypted_bytes']}B) → UDP → {target_label}",
+            stats={**stats, "plaintext": text, "plaintext_preview": text[:80], "ciphertext_preview": result["ciphertext_preview"], "sequence": self._sequence},
+            target=target_id,
+        )
+
+        def _mark_accepted():
+            if self._pending_denies and self.authorized:
+                self._pending_denies = False
+                self._packets_accepted += 1
+                self._add_event("packet", f"Hub ACCEPTED: {text[:60]}", stats=stats)
+
+        def _mark_denied_if_unauthorized():
+            if self._pending_denies and not self.authorized:
+                self._pending_denies = False
+                self._packets_denied += 1
+                self._add_event("deny", "Hub DENIED — device not authorized (zero-trust policy)")
+
+        threading.Timer(0.6, _mark_accepted).start()
+        threading.Timer(0.8, _mark_denied_if_unauthorized).start()
+        return result
 
     def _send(self, pkt: ZtonPacket) -> None:
         self._sock.sendto(pkt.to_bytes(), (self.hub_host, self.hub_port))
@@ -132,7 +178,9 @@ class ZtonNode:
             self._add_event("auth", f"Registered with hub — policy: {pkt.policy_result}")
         elif pkt.type == PacketType.DENY.value:
             reason = base64.b64decode(pkt.payload_b64).decode()
-            self._add_event("deny", reason)
+            self._pending_denies = False
+            self._packets_denied += 1
+            self._add_event("deny", f"Hub DENIED: {reason}")
         elif pkt.type == PacketType.DATA.value:
             if self._session:
                 ciphertext = base64.b64decode(pkt.payload_b64)
@@ -142,12 +190,13 @@ class ZtonNode:
                 except Exception as e:
                     self._add_event("deny", str(e))
 
-    def _add_event(self, kind: str, message: str, stats: dict | None = None) -> None:
+    def _add_event(self, kind: str, message: str, stats: dict | None = None, target: str = "") -> None:
         self._last_events.append({
             "kind": kind,
             "message": message,
             "stats": stats,
-            "timestamp": time.time(),
+            "target": target,
+            "timestamp": utc_now_iso(),
         })
         if len(self._last_events) > 50:
             self._last_events = self._last_events[-50:]
@@ -162,5 +211,8 @@ class ZtonNode:
             "policy_result": self._policy_result,
             "local_port": self.local_port,
             "targets": self.targets,
-            "events": self._last_events[-10:],
+            "packets_sent": self._packets_sent,
+            "packets_accepted": self._packets_accepted,
+            "packets_denied": self._packets_denied,
+            "events": self._last_events[-20:],
         }
