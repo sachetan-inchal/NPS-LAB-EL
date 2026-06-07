@@ -1,32 +1,106 @@
-# Simple, single-container OpenZiti or quickstart compose configuration
-# For local validation on a single laptop, using the OpenZiti quickstart container is the simplest method.
-version: '3.8'
+# ZTON 4-Device Demo — Zero Trust Overlay over Raw UDP
+#
+# Laptop A (Hub)     → http://localhost:8080
+# Laptop B (Sender)  → http://localhost:8081
+# Phone B  (Viewer)  → http://localhost:8082
+# Phone A  (Blocked) → http://localhost:8083
+#
+# For 4 physical devices on a LAN, set ZTON_HUB_HOST to Laptop A's IP
+# on each node and expose ports 8080 + 9999/udp on the hub machine.
 
 services:
-  ziti-controller:
-    image: openziti/quickstart:latest
-    container_name: ziti-controller
+  laptop-a:
+    build: .
+    container_name: zton-laptop-a
+    hostname: laptop-a
     environment:
-      - ZITI_BOOTSTRAP=true
-      - ZITI_BOOTSTRAP_USER=admin
-      - ZITI_BOOTSTRAP_PASSWORD=adminpassword
+      ZTON_ROLE: hub
+      ZTON_DEVICE_ID: laptop-a
+      ZTON_DEVICE_NAME: "Laptop A (Hub)"
+      ZTON_UDP_PORT: "9999"
+      ZTON_WEB_PORT: "8080"
+      ZTON_KEYS_DIR: /app/keys
     ports:
-      - "1280:1280" # Controller Edge API / Dashboard
-      - "8443:8443" # Router link port
+      - "8080:8080"
+      - "9999:9999/udp"
+    networks:
+      - zton-net
     volumes:
-      - ziti-data:/openziti
-    command: /var/openziti/scripts/run-controller.sh
+      - zton-keys:/app/keys
+    working_dir: /app
 
-  ziti-router:
-    image: openziti/quickstart:latest
-    container_name: ziti-router
+  laptop-b:
+    build: .
+    container_name: zton-laptop-b
+    hostname: laptop-b
     depends_on:
-      - ziti-controller
+      - laptop-a
     environment:
-      - ZITI_CONTROLLER_RAW=ziti-controller:1280
+      ZTON_ROLE: node
+      ZTON_DEVICE_ID: laptop-b
+      ZTON_DEVICE_NAME: "Laptop B (Authorized Sender)"
+      ZTON_HUB_HOST: laptop-a
+      ZTON_UDP_PORT: "9999"
+      ZTON_WEB_PORT: "8080"
+      ZTON_AUTHORIZED: "true"
+      ZTON_TARGETS: "phone-b,hub"
+      ZTON_KEYS_DIR: /app/keys
+    ports:
+      - "8081:8080"
+    networks:
+      - zton-net
     volumes:
-      - ziti-data:/openziti
-    command: /var/openziti/scripts/run-router.sh
+      - zton-keys:/app/keys
+
+  phone-b:
+    build: .
+    container_name: zton-phone-b
+    hostname: phone-b
+    depends_on:
+      - laptop-a
+    environment:
+      ZTON_ROLE: node
+      ZTON_DEVICE_ID: phone-b
+      ZTON_DEVICE_NAME: "Phone B (Authorized Viewer)"
+      ZTON_HUB_HOST: laptop-a
+      ZTON_UDP_PORT: "9999"
+      ZTON_WEB_PORT: "8080"
+      ZTON_AUTHORIZED: "true"
+      ZTON_TARGETS: "hub"
+      ZTON_KEYS_DIR: /app/keys
+    ports:
+      - "8082:8080"
+    networks:
+      - zton-net
+    volumes:
+      - zton-keys:/app/keys
+
+  phone-a:
+    build: .
+    container_name: zton-phone-a
+    hostname: phone-a
+    depends_on:
+      - laptop-a
+    environment:
+      ZTON_ROLE: node
+      ZTON_DEVICE_ID: phone-a
+      ZTON_DEVICE_NAME: "Phone A (Unauthorized)"
+      ZTON_HUB_HOST: laptop-a
+      ZTON_UDP_PORT: "9999"
+      ZTON_WEB_PORT: "8080"
+      ZTON_AUTHORIZED: "false"
+      ZTON_TARGETS: ""
+      ZTON_KEYS_DIR: /app/keys
+    ports:
+      - "8083:8080"
+    networks:
+      - zton-net
+    volumes:
+      - zton-keys:/app/keys
+
+networks:
+  zton-net:
+    driver: bridge
 
 volumes:
-  ziti-data:
+  zton-keys:

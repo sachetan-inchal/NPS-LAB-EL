@@ -1,0 +1,126 @@
+# ZTON — Zero Trust Overlay Network Demo
+
+**A Zero Trust Overlay Network Built on Raw UDP Sockets with Mutual Authentication and Per-Packet Encryption**
+
+Custom-branded web demo for the NPS Lab. No third-party console logos — this is a standalone ZTON UI.
+
+## 4-Device Scenario
+
+| Device | Role | URL (local) | Policy |
+|--------|------|-------------|--------|
+| **Laptop A** | Hub / Controller / Dashboard | http://localhost:8080 | Always allowed |
+| **Laptop B** | Authorized sender (sensor, video, voice) | http://localhost:8081 | Allowed → can route to Phone B |
+| **Phone B** | Authorized viewer (receives streams) | http://localhost:8082 | Allowed |
+| **Phone A** | Unauthorized attacker | http://localhost:8083 | **Denied** by policy engine |
+
+## Quick Start (1 laptop, 4 browser tabs)
+
+```bash
+cd zton-poc
+docker compose up --build
+```
+
+Then open:
+
+- http://localhost:8080 — Hub dashboard (watch all traffic live)
+- http://localhost:8081 — Send as Laptop B (authorized)
+- http://localhost:8082 — View as Phone B (receives forwarded packets)
+- http://localhost:8083 — Try as Phone A (packets denied)
+
+### Demo script for viva
+
+1. **Hub dashboard** (`:8080`) — show architecture stack and 4-device topology.
+2. **Laptop B** (`:8081`) — click "Sensor Data" or "Video Chunk" → watch hub log show `compress → encrypt → forward`.
+3. **Phone B** (`:8082`) — confirm received decrypted payload in its log.
+4. **Phone A** (`:8083`) — click "Attempt Send" → hub shows `DENY` (zero-trust policy block).
+5. Point out stats: original vs compressed vs encrypted bytes, packets denied counter.
+
+## 4 Physical Devices on a LAN
+
+Run the **hub** on Laptop A. Run each **node** on the other three devices.
+
+### Laptop A (Hub)
+
+```bash
+docker compose up laptop-a --build
+# Or without Docker:
+pip install -r requirements.txt
+ZTON_ROLE=hub ZTON_WEB_PORT=8080 python main.py
+```
+
+Ensure UDP **9999** and TCP **8080** are reachable from the LAN (firewall rules).
+
+Find Laptop A's LAN IP: `ipconfig` (Windows) or `ip addr` (Linux).
+
+### Laptop B / Phone B / Phone A (Nodes)
+
+On each device, set `ZTON_HUB_HOST` to Laptop A's IP (e.g. `192.168.1.10`):
+
+```bash
+# Laptop B
+ZTON_ROLE=node ZTON_DEVICE_ID=laptop-b ZTON_DEVICE_NAME="Laptop B" \
+  ZTON_HUB_HOST=192.168.1.10 ZTON_AUTHORIZED=true ZTON_TARGETS=phone-b,hub \
+  ZTON_WEB_PORT=8081 python main.py
+
+# Phone B
+ZTON_ROLE=node ZTON_DEVICE_ID=phone-b ZTON_DEVICE_NAME="Phone B" \
+  ZTON_HUB_HOST=192.168.1.10 ZTON_AUTHORIZED=true ZTON_WEB_PORT=8082 python main.py
+
+# Phone A (unauthorized)
+ZTON_ROLE=node ZTON_DEVICE_ID=phone-a ZTON_DEVICE_NAME="Phone A" \
+  ZTON_HUB_HOST=192.168.1.10 ZTON_AUTHORIZED=false ZTON_WEB_PORT=8083 python main.py
+```
+
+Open each device's browser to `http://<device-ip>:<port>`.
+
+## Architecture
+
+```
+Application
+     ↓
+Compression (zlib)
+     ↓
+Policy Engine (identity allow/deny + route rules)
+     ↓
+Per-Packet Encryption (AES-GCM)
+     ↓
+Mutual Authentication (Ed25519 signatures)
+     ↓
+Raw UDP Transport
+     ↓
+Internet / LAN
+```
+
+## What Each Layer Does
+
+| Layer | Implementation |
+|-------|----------------|
+| UDP transport | Python `socket.SOCK_DGRAM` — no TCP overhead |
+| Mutual auth | Ed25519 signature on every packet |
+| Per-packet encryption | AES-GCM with monotonic sequence (replay protection) |
+| Compression | zlib before encryption — dashboard shows byte savings |
+| Policy engine | Allow-list identities, deny-list, per-route rules |
+| Web UI | FastAPI + WebSocket live log — custom ZTON branding |
+
+## Relation to OpenZiti (parent repo)
+
+This repo also contains **OpenZiti** — a production zero-trust overlay platform. ZTON is a focused lab demo that implements the same *concepts* (UDP overlay, identity policy, encryption) in a minimal, presenter-friendly stack. The official Ziti Admin Console (`/zac/`) is **not used** in this demo.
+
+## Legacy CLI demo
+
+The original replay-detection CLI is still available:
+
+```bash
+python zton_demo.py server --port 9999
+python zton_demo.py client --port 9999 --replay-nonce
+```
+
+## Optional: OpenZiti backend
+
+To run OpenZiti controller alongside (separate stack):
+
+```bash
+docker compose -f docker-compose.ziti.yml up -d
+```
+
+Console at https://localhost:1280/zac/ — only if you need the full OpenZiti management plane.

@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ZTON — Zero Trust Overlay Network</title>
+  <link rel="stylesheet" href="/static/styles.css">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <svg class="brand-icon" viewBox="0 0 40 40" aria-hidden="true">
+        <polygon points="20,2 38,12 38,28 20,38 2,28 2,12" fill="none" stroke="currentColor" stroke-width="2"/>
+        <circle cx="20" cy="20" r="6" fill="currentColor"/>
+        <line x1="20" y1="2" x2="20" y2="14" stroke="currentColor" stroke-width="1.5"/>
+        <line x1="38" y1="12" x2="26" y2="18" stroke="currentColor" stroke-width="1.5"/>
+        <line x1="38" y1="28" x2="26" y2="22" stroke="currentColor" stroke-width="1.5"/>
+        <line x1="20" y1="38" x2="20" y2="26" stroke="currentColor" stroke-width="1.5"/>
+        <line x1="2" y1="28" x2="14" y2="22" stroke="currentColor" stroke-width="1.5"/>
+        <line x1="2" y1="12" x2="14" y2="18" stroke="currentColor" stroke-width="1.5"/>
+      </svg>
+      <div>
+        <h1>ZTON</h1>
+        <p class="tagline">Zero Trust Overlay Network</p>
+      </div>
+    </div>
+    <div class="status-pill" id="connection-status">Connecting…</div>
+  </header>
+
+  <main class="layout">
+    <section class="panel arch-panel">
+      <h2>Architecture</h2>
+      <div class="arch-stack">
+        <div class="arch-layer">Application</div>
+        <div class="arch-arrow">↓</div>
+        <div class="arch-layer accent">Compression Layer</div>
+        <div class="arch-arrow">↓</div>
+        <div class="arch-layer accent">Policy Engine</div>
+        <div class="arch-arrow">↓</div>
+        <div class="arch-layer accent">Per-Packet Encryption (AES-GCM)</div>
+        <div class="arch-arrow">↓</div>
+        <div class="arch-layer accent">Mutual Auth (Ed25519)</div>
+        <div class="arch-arrow">↓</div>
+        <div class="arch-layer highlight">Raw UDP Transport</div>
+        <div class="arch-arrow">↓</div>
+        <div class="arch-layer">Internet</div>
+      </div>
+      <p class="arch-note">Raw UDP sockets · Mutual authentication · Per-packet encryption · Identity-based zero trust</p>
+    </section>
+
+    <section class="panel topology-panel">
+      <h2>4-Device Demo Topology</h2>
+      <div class="topology-grid" id="topology-grid"></div>
+      <div class="role-badge" id="role-badge"></div>
+    </section>
+
+    <section class="panel stats-panel">
+      <h2>Live Metrics</h2>
+      <div class="stats-grid">
+        <div class="stat-card">
+          <span class="stat-value" id="stat-packets">0</span>
+          <span class="stat-label">Packets Forwarded</span>
+        </div>
+        <div class="stat-card deny">
+          <span class="stat-value" id="stat-denied">0</span>
+          <span class="stat-label">Packets Denied</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-value" id="stat-peers">0</span>
+          <span class="stat-label">Peers Online</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-value" id="stat-bytes">0</span>
+          <span class="stat-label">Bytes Saved (compression)</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel send-panel" id="send-panel">
+      <h2>Send Encrypted Packet</h2>
+      <div class="send-form">
+        <select id="target-select">
+          <option value="">Hub (broadcast)</option>
+          <option value="phone-b">Phone B (authorized viewer)</option>
+          <option value="laptop-b">Laptop B</option>
+        </select>
+        <input type="text" id="message-input" placeholder="Payload — sensor reading, chat, video chunk…" />
+        <button id="send-btn">Encrypt &amp; Send over UDP</button>
+      </div>
+      <div class="demo-scenarios">
+        <button class="scenario-btn" data-msg="SENSOR: temp=23.4°C humidity=61%">Sensor Data</button>
+        <button class="scenario-btn" data-msg="VIDEO_CHUNK: frame=1847 size=4096 codec=mjpeg">Video Chunk</button>
+        <button class="scenario-btn" data-msg="VOICE: opus_frame_120ms">Voice Stream</button>
+        <button class="scenario-btn" data-msg="CONTROL: unlock_gate zone=lab-3">Control Signal</button>
+      </div>
+      <p class="send-hint" id="send-hint"></p>
+    </section>
+
+    <section class="panel log-panel">
+      <h2>Live Packet Log</h2>
+      <div class="log-container" id="event-log"></div>
+    </section>
+  </main>
+
+  <footer>
+    <span>NPS Lab — Secure Transport Overlay Demo</span>
+    <span id="device-info"></span>
+  </footer>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
