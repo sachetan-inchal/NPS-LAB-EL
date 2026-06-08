@@ -34,8 +34,11 @@ def _events_to_traffic(events: list[dict]) -> list[dict]:
             label = "--"
         kind = e.get("kind", "")
         stats = e.get("stats") or {}
+        rep = 0
         if kind == "deny":
             acc, drop, vol = 0, 1, 0
+            if "replay" in e.get("message", "").lower():
+                rep = 1
         elif kind in ("packet", "sent", "encrypted"):
             acc = 1
             drop = 0
@@ -49,6 +52,7 @@ def _events_to_traffic(events: list[dict]) -> list[dict]:
             "accepted": acc,
             "dropped": drop,
             "volume": vol,
+            "replay": rep,
         })
     return points[-30:]
 

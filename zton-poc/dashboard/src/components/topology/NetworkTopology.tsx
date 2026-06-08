@@ -19,13 +19,14 @@ const STATUS_COLORS: Record<string, string> = {
 const TYPE_SHAPES: Record<string, string> = {
   controller: 'rounded-lg',
   router: 'rounded-lg',
+  hub: 'rounded-lg',
   endpoint: 'rounded-full',
 };
 
 function toFlowNodes(nodes: TopologyNode[]): Node[] {
   const positions: Record<string, { x: number; y: number }> = {
-    controller: { x: 250, y: 0 },
-    router: { x: 250, y: 100 },
+    'ziti-controller': { x: 250, y: 0 },
+    'ziti-router': { x: 250, y: 105 },
     'laptop-a': { x: 100, y: 220 },
     'laptop-b': { x: 0, y: 340 },
     'phone-b': { x: 200, y: 340 },
@@ -39,7 +40,7 @@ function toFlowNodes(nodes: TopologyNode[]): Node[] {
       background: '#1a2234',
       border: `2px solid ${STATUS_COLORS[n.status] ?? '#3b82f6'}`,
       color: '#e2e8f0',
-      borderRadius: n.type === 'endpoint' ? '50%' : '8px',
+      borderRadius: TYPE_SHAPES[n.type] === 'rounded-full' ? '999px' : '8px',
       padding: '10px 16px',
       fontSize: '12px',
       fontWeight: 600,
@@ -51,16 +52,24 @@ function toFlowNodes(nodes: TopologyNode[]): Node[] {
 
 function toFlowEdges(edges: TopologyEdge[], activeFlow: { source: string; target: string; status: string } | null): Edge[] {
   return edges.map((e) => {
-    const isActive = activeFlow && activeFlow.source === e.source && activeFlow.target === e.target;
+    const isActive = activeFlow && (
+      (activeFlow.source === e.source && activeFlow.target === e.target)
+      || (activeFlow.source === e.source)
+      || (activeFlow.target === e.target && e.source === 'laptop-a')
+    );
     const color = isActive
       ? (activeFlow!.status === 'allowed' ? '#10b981' : '#ef4444')
-      : '#2a3548';
+      : (e.kind === 'fabric-control' || e.kind === 'fabric-ready' ? '#3b82f6' : '#2a3548');
     return {
       id: e.id,
       source: e.source,
       target: e.target,
       animated: !!isActive,
-      style: { stroke: color, strokeWidth: isActive ? 3 : 1.5 },
+      style: {
+        stroke: color,
+        strokeWidth: isActive ? 3 : 1.5,
+        strokeDasharray: e.kind?.startsWith('fabric') ? '6 5' : undefined,
+      },
       markerEnd: { type: MarkerType.ArrowClosed, color },
     };
   });
@@ -85,6 +94,7 @@ export function NetworkTopology() {
         <div className="flex gap-3 text-xs">
           <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-500" /> Allowed</span>
           <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500" /> Blocked</span>
+          <span className="flex items-center gap-1"><span className="w-3 h-px bg-blue-500 border-t border-dashed border-blue-500" /> OpenZiti fabric</span>
         </div>
       </CardHeader>
       <div className="h-[300px] rounded-lg overflow-hidden border border-soc-border/40">

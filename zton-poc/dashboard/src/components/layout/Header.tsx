@@ -1,15 +1,22 @@
-import { Maximize2, Minimize2, Shield } from 'lucide-react';
+import { Maximize2, Minimize2, RotateCcw, Shield } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { api } from '@/services/api';
 import { useDashboardStore } from '@/store/dashboardStore';
+import { formatTimestamp } from '@/lib/time';
 
 export function Header() {
-  const { tab, setTab, presentationMode, togglePresentation } = useDashboardStore();
+  const { tab, setTab, presentationMode, togglePresentation, serverTime, resetDashboard } = useDashboardStore();
 
   const tabs = [
     { id: 'overview' as const, label: 'Operations Center' },
     { id: 'demo' as const, label: 'Demonstration' },
     { id: 'presentation' as const, label: 'Presentation' },
   ];
+
+  const handleReset = async () => {
+    await api.resetSimulation();
+    resetDashboard();
+  };
 
   return (
     <header className={`sticky top-0 z-50 border-b border-soc-border/60 bg-soc-bg/90 backdrop-blur-xl ${presentationMode ? 'py-4' : ''}`}>
@@ -22,7 +29,9 @@ export function Header() {
             <h1 className={`font-bold tracking-tight ${presentationMode ? 'text-2xl' : 'text-lg'}`}>
               ZTON Security Operations Center
             </h1>
-            <p className="text-xs text-soc-muted">Zero Trust Overlay Network · UDP Transport · Per-Packet Encryption</p>
+            <p className="text-xs text-soc-muted">
+              Zero Trust Overlay Network · Server time: {serverTime ? formatTimestamp(serverTime) : '—'}
+            </p>
           </div>
         </div>
         <div className="flex items-center gap-3">
@@ -39,6 +48,9 @@ export function Header() {
               </button>
             ))}
           </nav>
+          <Button variant="outline" size="sm" onClick={handleReset} className="hidden lg:flex">
+            <RotateCcw className="w-4 h-4" /> Reset
+          </Button>
           <Button variant="outline" size="icon" onClick={togglePresentation}>
             {presentationMode ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
           </Button>

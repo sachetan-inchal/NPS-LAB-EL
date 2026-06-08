@@ -1,6 +1,6 @@
 # ZTON — Zero Trust Overlay Network Demo
 
-**A Zero Trust Overlay Network Built on Raw UDP Sockets with Mutual Authentication and Per-Packet Encryption**
+**An OpenZiti-assisted zero-trust lab with an inspectable raw-UDP packet overlay demo**
 
 Enterprise-grade **SOC (Security Operations Center) dashboard** for final-year engineering evaluation. No third-party console logos.
 
@@ -61,6 +61,30 @@ Or with Docker (builds dashboard automatically):
 docker compose up --build laptop-a
 # Open http://localhost:8080
 ```
+
+### Realistic OpenZiti Fabric Mode
+
+Run the upgraded stack with OpenZiti controller and edge router containers beside the ZTON packet lab:
+
+```bash
+docker compose --profile openziti up --build
+```
+
+Then open:
+
+- http://localhost:8080 - SOC dashboard and OpenZiti fabric status
+- https://localhost:1280/zac/ - OpenZiti Admin Console
+- http://localhost:8081 - Laptop B packet sender
+- http://localhost:8082 - Phone B packet viewer
+- http://localhost:8083 - Phone A blocked client
+
+The dashboard now separates the project into two honest layers:
+
+| Layer | What runs | What it proves |
+|-------|-----------|----------------|
+| OpenZiti fabric plane | `openziti/quickstart` controller + edge router Docker containers | Production-style controller/router presence, admin console, fabric readiness |
+| ZTON packet lab | Python UDP hub/nodes | Inspectable encryption, signatures, replay blocking, per-packet policy decisions |
+| Full OpenZiti migration | Next implementation step | Enroll identities, define services/policies, and move app traffic through OpenZiti SDK or `ziti-edge-tunnel` |
 
 ### Dashboard Features
 

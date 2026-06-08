@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Play, Square, RotateCcw } from 'lucide-react';
+import { Play, Square, RotateCcw, Trash2 } from 'lucide-react';
 import { Card, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { api } from '@/services/api';
@@ -20,7 +20,7 @@ const REPLAY_OPTIONS = [
 ];
 
 export function PacketGenerator() {
-  const { payloadTypes, stats } = useDashboardStore();
+  const { payloadTypes, stats, resetDashboard } = useDashboardStore();
   const [count, setCount] = useState(100);
   const [payloadType, setPayloadType] = useState('Sensor Data');
   const [payloadSize, setPayloadSize] = useState(10240);
@@ -29,17 +29,29 @@ export function PacketGenerator() {
 
   const types = payloadTypes.length ? payloadTypes : ['Chat Message', 'Sensor Data', 'Video Stream', 'Voice Stream', 'File Transfer'];
 
+  const intervalMs = count >= 1000 ? 5 : count >= 100 ? 15 : 30;
+
   const handleStart = async () => {
     setLoading(true);
-    await api.startSimulation({ count, payload_type: payloadType, payload_size: payloadSize, replay_pct: replayPct, interval_ms: 30 });
+    await api.startSimulation({ count, payload_type: payloadType, payload_size: payloadSize, replay_pct: replayPct, interval_ms: intervalMs });
     setLoading(false);
+  };
+
+  const handleReset = async () => {
+    await api.resetSimulation();
+    resetDashboard();
+  };
+
+  const handleClearLogs = async () => {
+    await api.clearLogs();
+    useDashboardStore.getState().setEvents([]);
   };
 
   return (
     <Card>
       <CardHeader>
         <CardTitle>Packet Generator</CardTitle>
-        {stats?.running && <span className="text-xs text-amber-400 font-mono animate-pulse">RUNNING</span>}
+        {stats.running && <span className="text-xs text-amber-400 font-mono animate-pulse">RUNNING — live counters updating</span>}
       </CardHeader>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
         <div>
@@ -71,11 +83,15 @@ export function PacketGenerator() {
           </select>
         </div>
       </div>
-      <div className="flex gap-3">
-        <Button onClick={handleStart} disabled={loading || stats?.running}><Play className="w-4 h-4" /> Start Test</Button>
+      <div className="flex flex-wrap gap-3">
+        <Button onClick={handleStart} disabled={loading || stats.running}><Play className="w-4 h-4" /> Start Test</Button>
         <Button variant="destructive" onClick={() => api.stopSimulation()}><Square className="w-4 h-4" /> Stop</Button>
-        <Button variant="outline" onClick={() => api.resetSimulation()}><RotateCcw className="w-4 h-4" /> Reset</Button>
+        <Button variant="outline" onClick={handleReset}><RotateCcw className="w-4 h-4" /> Reset Dashboard</Button>
+        <Button variant="outline" onClick={handleClearLogs}><Trash2 className="w-4 h-4" /> Clear Logs</Button>
       </div>
+      <p className="text-xs text-soc-muted mt-3">
+        All statistics are computed from packet history — {stats.total_sent} packets recorded.
+      </p>
     </Card>
   );
 }

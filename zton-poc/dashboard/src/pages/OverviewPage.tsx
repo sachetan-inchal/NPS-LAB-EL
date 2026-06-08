@@ -1,9 +1,11 @@
 import { SystemStatusPanel } from '@/components/dashboard/SystemStatusPanel';
+import { FabricRealityPanel } from '@/components/dashboard/FabricRealityPanel';
 import { StatsPanel } from '@/components/dashboard/StatsPanel';
 import { TrafficCharts } from '@/components/charts/TrafficCharts';
 import { NetworkTopology } from '@/components/topology/NetworkTopology';
 import { PacketGenerator } from '@/components/panels/PacketGenerator';
 import { PacketStream } from '@/components/panels/PacketStream';
+import { PacketInspector } from '@/components/panels/PacketInspector';
 import { SecurityEvents } from '@/components/panels/SecurityEvents';
 import { EncryptionVisualizer } from '@/components/panels/EncryptionVisualizer';
 import { PolicyPanel } from '@/components/panels/PolicyPanel';
@@ -12,7 +14,7 @@ import { Card } from '@/components/ui/card';
 import { Monitor, Laptop, Smartphone } from 'lucide-react';
 
 export function OverviewPage() {
-  const { systemStatus, stats, packets, events, policies } = useDashboardStore();
+  const { systemStatus, fabricStatus, stats, packets, events, policies, selectedPacket, setSelectedPacket } = useDashboardStore();
   return (
     <div className="space-y-4">
       <Card className="border-soc-accent/40 bg-gradient-to-r from-blue-500/10 to-indigo-500/5">
@@ -36,6 +38,7 @@ export function OverviewPage() {
         </div>
       </Card>
       <SystemStatusPanel status={systemStatus} />
+      <FabricRealityPanel fabric={fabricStatus} />
       <StatsPanel stats={stats} />
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
         <div className="xl:col-span-2"><NetworkTopology /></div>
@@ -43,11 +46,20 @@ export function OverviewPage() {
       </div>
       <TrafficCharts stats={stats} />
       <PacketGenerator />
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-        <PacketStream packets={packets} />
-        <SecurityEvents events={events} />
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+        <div className="xl:col-span-2">
+          <PacketStream
+            packets={packets}
+            selectedId={selectedPacket?.packet_id ?? selectedPacket?.id}
+            onSelect={setSelectedPacket}
+          />
+        </div>
+        <PacketInspector packet={selectedPacket} onClose={() => setSelectedPacket(null)} />
       </div>
-      <PolicyPanel policies={policies} />
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+        <SecurityEvents events={events} />
+        <PolicyPanel policies={policies} />
+      </div>
     </div>
   );
 }

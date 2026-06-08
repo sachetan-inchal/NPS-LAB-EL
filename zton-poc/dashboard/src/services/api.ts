@@ -1,5 +1,5 @@
 import type {
-  DashboardStats, PacketRecord, Policy, Scenario,
+  DashboardStats, FabricStatus, PacketRecord, Policy, Scenario,
   SecurityEvent, SimulateConfig, SystemStatus, TopologyEdge, TopologyNode,
 } from '@/types';
 import type { DeviceStatus } from '@/store/dashboardStore';
@@ -21,8 +21,10 @@ async function fetchBase<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   status: () => fetchSoc<SystemStatus>('/status'),
+  fabric: () => fetchSoc<FabricStatus>('/fabric'),
   stats: () => fetchSoc<DashboardStats>('/stats'),
-  packets: (limit = 100) => fetchSoc<{ packets: PacketRecord[] }>(`/packets?limit=${limit}`),
+  packets: (limit = 200) => fetchSoc<{ packets: PacketRecord[] }>(`/packets?limit=${limit}`),
+  packet: (id: string) => fetchSoc<{ ok: boolean; packet?: PacketRecord; error?: string }>(`/packets/${id}`),
   events: (limit = 50) => fetchSoc<{ events: SecurityEvent[] }>(`/events?limit=${limit}`),
   policies: () => fetchSoc<{ policies: Policy[] }>('/policies'),
   topology: () => fetchSoc<{ nodes: TopologyNode[]; edges: TopologyEdge[] }>('/topology'),
@@ -31,10 +33,10 @@ export const api = {
     fetchSoc('/simulate/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(config) }),
   stopSimulation: () => fetchSoc('/simulate/stop', { method: 'POST' }),
   resetSimulation: () => fetchSoc('/simulate/reset', { method: 'POST' }),
+  clearLogs: () => fetchSoc('/simulate/clear-logs', { method: 'POST' }),
   runScenario: (id: string) => fetchSoc(`/scenarios/${id}/run`, { method: 'POST' }),
 };
 
-/** Device node APIs (ports 8081–8083) */
 export const deviceApi = {
   status: () => fetchBase<DeviceStatus>('/status'),
   send: (message: string, target_id = '') =>
@@ -60,26 +62,6 @@ export const deviceApi = {
     const s = await fetchBase<{ role: string }>('/status');
     return s.role === 'node' ? 'node' : 'hub';
   },
-};
-
-const HUB_URL = typeof window !== 'undefined'
-  ? `${window.location.protocol}//${window.location.hostname}:8080`
-  : 'http://localhost:8080';
-
-/** Fetch live metrics from the hub (port 8080) — works from device tabs via CORS */
-export const hubLiveApi = {
-  stats: (deviceId: string) =>
-    fetch(`${HUB_URL}/api/live/stats?device_id=${deviceId}`).then((r) => r.json()) as Promise<{
-      accepted: number; dropped: number; total_sent: number; replay_blocked: number;
-    }>,
-  traffic: (deviceId: string) =>
-    fetch(`${HUB_URL}/api/live/traffic?device_id=${deviceId}`).then((r) => r.json()) as Promise<{
-      points: Array<{ time: string; accepted: number; dropped: number; volume: number }>;
-    }>,
-  packets: (deviceId: string) =>
-    fetch(`${HUB_URL}/api/live/packets?device_id=${deviceId}&limit=20`).then((r) => r.json()) as Promise<{
-      packets: Array<Record<string, unknown>>;
-    }>,
 };
 
 export function connectSocWebSocket(onMessage: (data: unknown) => void): WebSocket {

@@ -1,6 +1,7 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { AlertTriangle, CheckCircle, Info, ShieldAlert } from 'lucide-react';
 import { Card, CardHeader, CardTitle } from '@/components/ui/card';
+import { formatTimeShort } from '@/lib/time';
 import type { SecurityEvent } from '@/types';
 
 const LEVEL_CONFIG: Record<string, { icon: typeof Info; color: string; bg: string }> = {
@@ -14,17 +15,17 @@ export function SecurityEvents({ events }: { events: SecurityEvent[] }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Security Events</CardTitle>
-        <span className="text-xs text-soc-muted">SOC Feed</span>
+        <CardTitle>Security Event Feed</CardTitle>
+        <span className="text-xs text-soc-muted">Newest first</span>
       </CardHeader>
-      <div className="space-y-2 max-h-[320px] overflow-y-auto">
+      <div className="space-y-2 max-h-[360px] overflow-y-auto">
         <AnimatePresence initial={false}>
           {events.map((e, i) => {
             const cfg = LEVEL_CONFIG[e.level] ?? LEVEL_CONFIG.INFO;
             const Icon = cfg.icon;
             return (
               <motion.div
-                key={`${e.timestamp}-${i}`}
+                key={`${e.timestamp}-${e.message}-${i}`}
                 initial={{ opacity: 0, y: -8 }}
                 animate={{ opacity: 1, y: 0 }}
                 className={`flex gap-3 p-3 rounded-lg border ${cfg.bg}`}
@@ -33,7 +34,8 @@ export function SecurityEvents({ events }: { events: SecurityEvent[] }) {
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 mb-0.5">
                     <span className={`text-xs font-bold font-mono ${cfg.color}`}>[{e.level}]</span>
-                    <span className="text-xs text-soc-muted">{e.timestamp?.slice(11, 19)}</span>
+                    <span className="text-xs text-soc-muted">{formatTimeShort(e.timestamp)}</span>
+                    {e.source && <span className="text-xs text-soc-muted">· {e.source}</span>}
                   </div>
                   <p className="text-sm text-soc-text">{e.message}</p>
                 </div>
@@ -42,7 +44,7 @@ export function SecurityEvents({ events }: { events: SecurityEvent[] }) {
           })}
         </AnimatePresence>
         {events.length === 0 && (
-          <p className="text-center text-soc-muted py-8 text-sm">Awaiting security events…</p>
+          <p className="text-center text-soc-muted py-8 text-sm">No events — dashboard is in clean startup state.</p>
         )}
       </div>
     </Card>

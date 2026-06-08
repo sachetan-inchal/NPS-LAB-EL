@@ -9,6 +9,41 @@
 # on each node and expose ports 8080 + 9999/udp on the hub machine.
 
 services:
+  ziti-controller:
+    image: openziti/quickstart:latest
+    container_name: ziti-controller
+    profiles:
+      - openziti
+    environment:
+      ZITI_BOOTSTRAP: "true"
+      ZITI_BOOTSTRAP_USER: admin
+      ZITI_BOOTSTRAP_PASSWORD: adminpassword
+    ports:
+      - "1280:1280"
+      - "8443:8443"
+    volumes:
+      - ziti-data:/openziti
+    networks:
+      - zton-net
+    command: /var/openziti/scripts/run-controller.sh
+
+  ziti-router:
+    image: openziti/quickstart:latest
+    container_name: ziti-router
+    profiles:
+      - openziti
+    depends_on:
+      - ziti-controller
+    environment:
+      ZITI_CONTROLLER_RAW: ziti-controller:1280
+    ports:
+      - "3022:3022"
+    volumes:
+      - ziti-data:/openziti
+    networks:
+      - zton-net
+    command: /var/openziti/scripts/run-router.sh
+
   laptop-a:
     build: .
     container_name: zton-laptop-a
@@ -20,6 +55,11 @@ services:
       ZTON_UDP_PORT: "9999"
       ZTON_WEB_PORT: "8080"
       ZTON_KEYS_DIR: /app/keys
+      ZITI_CTRL_HOST: ziti-controller
+      ZITI_CTRL_PORT: "1280"
+      ZITI_ROUTER_HOST: ziti-router
+      ZITI_ROUTER_PORT: "3022"
+      ZITI_CONSOLE_URL: "https://localhost:1280/zac/"
     ports:
       - "8080:8080"
       - "9999:9999/udp"
@@ -104,3 +144,4 @@ networks:
 
 volumes:
   zton-keys:
+  ziti-data:

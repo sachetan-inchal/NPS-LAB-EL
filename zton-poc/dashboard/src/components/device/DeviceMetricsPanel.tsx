@@ -18,18 +18,18 @@ interface DeviceMetricsProps {
   accepted: number;
   dropped: number;
   replayBlocked: number;
-  traffic: Array<{ time: string; accepted: number; dropped: number; volume: number }>;
+  traffic: Array<{ time: string; accepted: number; dropped: number; volume: number; replay?: number }>;
 }
 
 export function DeviceMetricsPanel({ sent, accepted, dropped, replayBlocked, traffic }: DeviceMetricsProps) {
   const chartData = traffic.length > 0 ? traffic : [
-    { time: '--', accepted: 0, dropped: 0, volume: 0, pps: 0 },
+    { time: '--', accepted: 0, dropped: 0, volume: 0, pps: 0, replay: 0 },
   ];
   const withPps = chartData.map((p, i) => ({
     ...p,
     name: p.time,
     pps: p.accepted + p.dropped,
-    replay: Math.round(p.dropped * 0.2),
+    replay: p.replay ?? 0,
   }));
 
   return (

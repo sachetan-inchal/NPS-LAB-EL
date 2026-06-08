@@ -14,7 +14,7 @@ const METRICS = [
 ] as const;
 
 export function StatsPanel({ stats }: { stats: DashboardStats | null }) {
-  if (!stats) return null;
+  if (!stats) return null; // stats always initialized to zeros in store
   return (
     <Card>
       <CardHeader>

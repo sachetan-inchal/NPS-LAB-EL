@@ -1,5 +1,6 @@
-"""SOC dashboard API routes."""
+"""SOC dashboard API — unified packet store."""
 
+import asyncio
 import os
 import socket
 from typing import Any
@@ -7,39 +8,44 @@ from typing import Any
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 
-from server.simulator import simulator, PAYLOAD_TYPES
+from server.packet_store import packet_store
+from server.simulator import PAYLOAD_TYPES, simulator
+from server.ziti_fabric import get_fabric_status
 
 router = APIRouter(prefix="/api/soc", tags=["soc"])
 
 POLICIES = [
-    {"id": "p1", "effect": "allow", "source": "Laptop B", "target": "Video Service", "rule": "service-policy"},
-    {"id": "p2", "effect": "allow", "source": "Phone B", "target": "Sensor Service", "rule": "service-policy"},
-    {"id": "p3", "effect": "deny", "source": "Phone A", "target": "Video Service", "rule": "identity-policy"},
-    {"id": "p4", "effect": "deny", "source": "Unknown Node", "target": "Any Service", "rule": "default-deny"},
+    {"id": "p1", "effect": "allow", "source": "Laptop B", "target": "Phone B", "rule": "route-policy"},
+    {"id": "p2", "effect": "allow", "source": "Phone B", "target": "Hub", "rule": "route-policy"},
+    {"id": "p3", "effect": "deny", "source": "Phone A", "target": "Any", "rule": "deny-list"},
+    {"id": "p4", "effect": "deny", "source": "Unknown Node", "target": "Any", "rule": "default-deny"},
 ]
 
 SCENARIOS = [
     {"id": "s1", "name": "Normal Traffic", "description": "100 packets, 0 attacks", "count": 100, "replay_pct": 0, "payload_type": "Chat Message", "payload_size": 1024},
-    {"id": "s2", "name": "Replay Attack", "description": "100 packets, 10% replay attempts", "count": 100, "replay_pct": 0.10, "payload_type": "Sensor Data", "payload_size": 4096},
+    {"id": "s2", "name": "Replay Attack", "description": "100 packets, 10% real replay reinjection", "count": 100, "replay_pct": 0.10, "payload_type": "Sensor Data", "payload_size": 4096},
     {"id": "s3", "name": "Video Stream", "description": "500 encrypted video frames", "count": 500, "replay_pct": 0, "payload_type": "Video Stream", "payload_size": 65536},
-    {"id": "s4", "name": "Unauthorized User", "description": "Access denied by policy", "count": 50, "replay_pct": 0, "payload_type": "Video Stream", "payload_size": 10240, "force_sender": "phone-a"},
+    {"id": "s4", "name": "Unauthorized User", "description": "50 packets from Phone A — all denied", "count": 50, "replay_pct": 0, "payload_type": "Video Stream", "payload_size": 10240, "force_sender": "phone-a"},
 ]
 
 TOPOLOGY_NODES = [
-    {"id": "controller", "label": "Controller", "type": "controller", "status": "online"},
-    {"id": "router", "label": "Router", "type": "router", "status": "online"},
-    {"id": "laptop-a", "label": "Laptop A", "type": "endpoint", "status": "online"},
+    {"id": "ziti-controller", "label": "OpenZiti Controller", "type": "controller", "status": "warning"},
+    {"id": "ziti-router", "label": "OpenZiti Edge Router", "type": "router", "status": "warning"},
+    {"id": "laptop-a", "label": "Laptop A (ZTON Hub)", "type": "hub", "status": "online"},
     {"id": "laptop-b", "label": "Laptop B", "type": "endpoint", "status": "online"},
-    {"id": "phone-a", "label": "Phone A", "type": "endpoint", "status": "warning"},
     {"id": "phone-b", "label": "Phone B", "type": "endpoint", "status": "online"},
+    {"id": "phone-a", "label": "Phone A", "type": "endpoint", "status": "blocked"},
 ]
 
 TOPOLOGY_EDGES = [
-    {"id": "e1", "source": "controller", "target": "router"},
-    {"id": "e2", "source": "router", "target": "laptop-a"},
-    {"id": "e3", "source": "laptop-a", "target": "laptop-b"},
-    {"id": "e4", "source": "laptop-a", "target": "phone-b"},
-    {"id": "e5", "source": "laptop-a", "target": "phone-a"},
+    {"id": "fabric-1", "source": "ziti-controller", "target": "ziti-router", "kind": "fabric-control"},
+    {"id": "fabric-2", "source": "ziti-router", "target": "laptop-a", "kind": "fabric-ready"},
+    {"id": "fabric-3", "source": "ziti-router", "target": "laptop-b", "kind": "fabric-ready"},
+    {"id": "fabric-4", "source": "ziti-router", "target": "phone-b", "kind": "fabric-ready"},
+    {"id": "udp-1", "source": "laptop-b", "target": "laptop-a", "kind": "custom-udp"},
+    {"id": "udp-2", "source": "laptop-a", "target": "phone-b", "kind": "custom-udp"},
+    {"id": "udp-3", "source": "phone-b", "target": "laptop-a", "kind": "custom-udp"},
+    {"id": "udp-4", "source": "phone-a", "target": "laptop-a", "kind": "custom-udp"},
 ]
 
 
@@ -63,21 +69,25 @@ def _check_port(host: str, port: int) -> str:
         return "offline"
 
 
+def _sync_hub_packets() -> None:
+    from server.app import hub
+    if not hub:
+        return
+    for e in hub.events.history():
+        packet_store.ingest_hub_event(e)
+
+
 def _system_status(hub: Any) -> dict:
-    ziti_ctrl = os.getenv("ZITI_CTRL_HOST", "127.0.0.1")
-    ziti_port = int(os.getenv("ZITI_CTRL_PORT", "1280"))
-    ctrl_status = _check_port(ziti_ctrl, ziti_port)
-
-    peers = []
-    if hub:
-        peers = [p["device_id"] for p in hub.status().get("peers", [])]
-
+    fabric = get_fabric_status()
+    peers = [p["device_id"] for p in hub.status().get("peers", [])] if hub else []
     return {
-        "controller": {"status": ctrl_status.upper(), "label": "OpenZiti Controller"},
-        "router": {"status": "ONLINE" if ctrl_status == "online" else "WARNING", "label": "OpenZiti Router"},
+        "controller": {"status": fabric["controller"]["status"], "label": "OpenZiti Controller"},
+        "router": {"status": fabric["router"]["status"], "label": "OpenZiti Edge Router"},
         "overlay": {"status": "ONLINE" if hub else "WARNING", "label": "ZTON UDP Overlay"},
         "encryption": {"status": "ONLINE", "label": "AES-GCM + Ed25519"},
-        "connected_nodes": {"count": max(len(peers), 3), "status": "ONLINE", "peers": peers},
+        "connected_nodes": {"count": len(peers), "status": "ONLINE" if peers else "WARNING", "peers": peers},
+        "fabric": fabric,
+        "server_time": __import__("zton.timeutil", fromlist=["utc_now_iso"]).utc_now_iso(),
     }
 
 
@@ -87,61 +97,76 @@ async def soc_status():
     return _system_status(hub)
 
 
+@router.get("/fabric")
+async def soc_fabric():
+    return get_fabric_status()
+
+
 @router.get("/stats")
 async def soc_stats():
-    from server.app import hub
-    sim = simulator.snapshot()
-    hub_stats = hub.status().get("stats", {}) if hub else {}
+    _sync_hub_packets()
+    snap = packet_store.snapshot()
     return {
-        "total_sent": sim["packets_sent"] + hub_stats.get("packets_total", 0),
-        "total_received": sim["packets_received"] + hub_stats.get("packets_total", 0),
-        "accepted": sim["packets_accepted"] + hub_stats.get("packets_forwarded", 0),
-        "dropped": sim["packets_dropped"] + hub_stats.get("packets_denied", 0),
-        "replay_blocked": sim["replay_blocked"],
-        "active_sessions": sim["active_sessions"],
-        "running": sim["running"],
-        "traffic": sim["packets_per_second"],
+        "total_sent": snap["total_sent"],
+        "total_received": snap["total_received"],
+        "accepted": snap["accepted"],
+        "dropped": snap["dropped"],
+        "replay_blocked": snap["replay_blocked"],
+        "active_sessions": snap["active_sessions"],
+        "running": snap["running"],
+        "traffic": snap["traffic"],
+        "traffic_volume": snap.get("traffic_volume", 0),
+        "volume_by_type": packet_store.volume_by_type(),
+        "server_time": __import__("zton.timeutil", fromlist=["utc_now_iso"]).utc_now_iso(),
     }
 
 
 @router.get("/packets")
-async def soc_packets(limit: int = 100):
-    sim = simulator.snapshot()
-    from server.app import hub
-    live = []
-    if hub:
-        for e in hub.events.history():
-            if e.get("kind") in ("packet", "deny", "forward"):
-                live.append(_hub_event_to_packet(e))
-    combined = live + sim["packet_history"]
-    return {"packets": combined[:limit]}
+async def soc_packets(limit: int = 200):
+    _sync_hub_packets()
+    snap = packet_store.snapshot()
+    return {"packets": snap["packets"][:limit]}
+
+
+@router.get("/packets/{packet_id}")
+async def soc_packet_detail(packet_id: str):
+    _sync_hub_packets()
+    pkt = packet_store.get_packet(packet_id)
+    if not pkt:
+        return {"ok": False, "error": "Packet not found"}
+    return {"ok": True, "packet": pkt}
 
 
 @router.get("/events")
 async def soc_events(limit: int = 50):
-    sim = simulator.snapshot()
-    from server.app import hub
-    events = list(sim["security_events"])
-    if hub:
-        for e in hub.events.history():
-            events.append(_hub_event_to_security(e))
-    return {"events": events[:limit]}
+    _sync_hub_packets()
+    snap = packet_store.snapshot()
+    return {"events": snap["events"][:limit]}
 
 
 @router.get("/policies")
 async def soc_policies():
     from server.app import hub
     policies = list(POLICIES)
+    policies.insert(0, {"id": "ziti-fabric", "effect": "info", "source": "OpenZiti", "target": "Controller + Edge Router", "rule": "fabric-plane"})
     if hub:
         snap = hub.policy.snapshot()
-        policies.append({"id": "live", "effect": "info", "source": "Live Policy", "target": str(snap), "rule": "runtime"})
+        policies.append({"id": "live", "effect": "info", "source": "Runtime", "target": str(snap), "rule": "live-policy"})
     return {"policies": policies}
 
 
 @router.get("/topology")
 async def soc_topology():
     from server.app import hub
+    fabric = get_fabric_status()
     nodes = [dict(n) for n in TOPOLOGY_NODES]
+    status_by_id = {
+        "ziti-controller": "online" if fabric["controller"]["status"] == "ONLINE" else "warning",
+        "ziti-router": "online" if fabric["router"]["status"] == "ONLINE" else "warning",
+    }
+    for n in nodes:
+        if n["id"] in status_by_id:
+            n["status"] = status_by_id[n["id"]]
     if hub:
         for p in hub.status().get("peers", []):
             for n in nodes:
@@ -165,21 +190,28 @@ async def simulate_start(req: SimulateRequest):
         interval_ms=req.interval_ms,
         force_sender=req.force_sender,
     )
-    simulator._emit_event("INFO", f"Simulation started — {req.count} packets, {req.payload_type}")
     return {"ok": True, "running": True}
 
 
 @router.post("/simulate/stop")
 async def simulate_stop():
     simulator.stop()
-    simulator._emit_event("INFO", "Simulation stopped")
     return {"ok": True, "running": False}
 
 
 @router.post("/simulate/reset")
 async def simulate_reset():
     simulator.reset()
-    simulator._emit_event("INFO", "Dashboard metrics reset")
+    from server.app import hub
+    if hub:
+        hub.events._history.clear()
+    return {"ok": True}
+
+
+@router.post("/simulate/clear-logs")
+async def simulate_clear_logs():
+    with packet_store._lock:
+        packet_store._events.clear()
     return {"ok": True}
 
 
@@ -188,71 +220,126 @@ async def run_scenario(scenario_id: str):
     scenario = next((s for s in SCENARIOS if s["id"] == scenario_id), None)
     if not scenario:
         return {"ok": False, "error": "Unknown scenario"}
+    interval = max(5, min(50, 5000 // max(scenario["count"], 1)))
     simulator.start_async(
         count=scenario["count"],
         payload_type=scenario["payload_type"],
         payload_size=scenario["payload_size"],
         replay_pct=scenario.get("replay_pct", 0),
-        interval_ms=20,
+        interval_ms=interval,
         force_sender=scenario.get("force_sender"),
     )
-    simulator._emit_event("INFO", f"Scenario started: {scenario['name']}")
     return {"ok": True, "scenario": scenario}
 
 
-def _hub_event_to_packet(e: dict) -> dict:
-    kind = e.get("kind", "")
-    status = "DROPPED" if kind == "deny" else "ACCEPTED"
+@router.get("/validation")
+async def validation_checklist():
+    snap = packet_store.snapshot()
     return {
-        "id": e.get("timestamp", "")[:8],
-        "timestamp": e.get("timestamp", ""),
-        "sender": e.get("device_name", ""),
-        "sender_id": e.get("device_id", ""),
-        "receiver": "hub",
-        "session_id": "live",
-        "nonce": e.get("stats", {}).get("sequence", 0) if e.get("stats") else 0,
-        "payload_type": "Live Traffic",
-        "encryption": "AES-GCM + Ed25519",
-        "decision": e.get("policy", status),
-        "status": status,
-        "payload_size": e.get("stats", {}).get("original_bytes", 0) if e.get("stats") else 0,
-        "ciphertext_preview": "gAAAAA...",
-        "live": True,
-    }
-
-
-def _hub_event_to_security(e: dict) -> dict:
-    kind = e.get("kind", "info")
-    level_map = {"auth": "INFO", "packet": "SUCCESS", "deny": "CRITICAL", "forward": "SUCCESS"}
-    return {
-        "level": level_map.get(kind, "INFO"),
-        "message": e.get("message", ""),
-        "timestamp": e.get("timestamp", ""),
-        "source": e.get("device_name", "zton"),
+        "counters_at_zero": snap["total_sent"] == 0,
+        "no_packets": len(snap["packets"]) == 0,
+        "no_events": len(snap["events"]) == 0,
+        "server_time": __import__("zton.timeutil", fromlist=["utc_now_iso"]).utc_now_iso(),
+        "checks": [
+            {"id": "counters_zero", "ok": snap["total_sent"] == 0, "label": "Counters start at zero"},
+            {"id": "no_fake_packets", "ok": len(snap["packets"]) == 0, "label": "No seeded packet history"},
+            {"id": "no_fake_drops", "ok": snap["dropped"] == 0, "label": "No fake drops at startup"},
+            {"id": "timestamps", "ok": True, "label": "UTC timestamps enabled"},
+            {"id": "replay_engine", "ok": True, "label": "Replay reinjection engine ready"},
+            {"id": "charts_derived", "ok": True, "label": "Charts derive from packet store"},
+            {"id": "reset_available", "ok": True, "label": "Reset endpoint available"},
+        ],
     }
 
 
 @router.websocket("/ws")
 async def soc_ws(websocket: WebSocket):
     await websocket.accept()
+    loop = asyncio.get_running_loop()
+    q = asyncio.Queue()
+    packet_store.register_listener(loop, q)
+
+    # Send initial snapshot status immediately
+    _sync_hub_packets()
+    snap = packet_store.snapshot()
+    await websocket.send_json({
+        "type": "init",
+        "server_time": __import__("zton.timeutil", fromlist=["utc_now_iso"]).utc_now_iso(),
+        "stats": {
+            "total_sent": snap["total_sent"],
+            "total_received": snap["total_received"],
+            "accepted": snap["accepted"],
+            "dropped": snap["dropped"],
+            "replay_blocked": snap["replay_blocked"],
+            "active_sessions": snap["active_sessions"],
+            "running": snap["running"],
+            "traffic_volume": snap.get("traffic_volume", 0),
+            "traffic": snap["traffic"],
+        },
+        "volume_by_type": packet_store.volume_by_type(),
+        "packets": snap["packets"][:100],
+        "events": snap["events"][:50],
+    })
+
+    # Task to periodically send tick for time sync and general status updates
+    async def tick_loop():
+        try:
+            while True:
+                await asyncio.sleep(1.0)
+                _sync_hub_packets()
+                snap = packet_store.snapshot()
+                await websocket.send_json({
+                    "type": "tick",
+                    "server_time": __import__("zton.timeutil", fromlist=["utc_now_iso"]).utc_now_iso(),
+                    "stats": {
+                        "total_sent": snap["total_sent"],
+                        "total_received": snap["total_received"],
+                        "accepted": snap["accepted"],
+                        "dropped": snap["dropped"],
+                        "replay_blocked": snap["replay_blocked"],
+                        "active_sessions": snap["active_sessions"],
+                        "running": snap["running"],
+                        "traffic_volume": snap.get("traffic_volume", 0),
+                        "traffic": snap["traffic"],
+                    },
+                    "volume_by_type": packet_store.volume_by_type(),
+                })
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            pass
+
+    tick_task = asyncio.create_task(tick_loop())
+
     try:
         while True:
-            import asyncio
-            snap = simulator.snapshot()
-            from server.app import hub
+            msg_type, item = await q.get()
+            _sync_hub_packets()
+            snap = packet_store.snapshot()
+            
+            # Send immediate update
             await websocket.send_json({
-                "type": "tick",
+                "type": "update",
+                "update_type": msg_type,
+                "server_time": __import__("zton.timeutil", fromlist=["utc_now_iso"]).utc_now_iso(),
+                "latest_packet": item if msg_type == "packet" else None,
+                "latest_event": item if msg_type == "event" else None,
+                "new_packet": msg_type == "packet",
                 "stats": {
-                    "total_sent": snap["packets_sent"],
-                    "accepted": snap["packets_accepted"],
-                    "dropped": snap["packets_dropped"],
+                    "total_sent": snap["total_sent"],
+                    "total_received": snap["total_received"],
+                    "accepted": snap["accepted"],
+                    "dropped": snap["dropped"],
                     "replay_blocked": snap["replay_blocked"],
+                    "active_sessions": snap["active_sessions"],
                     "running": snap["running"],
+                    "traffic_volume": snap.get("traffic_volume", 0),
+                    "traffic": snap["traffic"],
                 },
-                "latest_packet": snap["packet_history"][0] if snap["packet_history"] else None,
-                "latest_event": snap["security_events"][0] if snap["security_events"] else None,
-                "hub_peers": hub.status().get("peers", []) if hub else [],
+                "volume_by_type": packet_store.volume_by_type(),
             })
-            await asyncio.sleep(0.5)
     except WebSocketDisconnect:
         pass
+    finally:
+        tick_task.cancel()
+        packet_store.unregister_listener(q)

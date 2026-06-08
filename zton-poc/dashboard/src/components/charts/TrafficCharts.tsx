@@ -4,6 +4,7 @@ import {
 } from 'recharts';
 import { Card, CardHeader, CardTitle } from '@/components/ui/card';
 import type { DashboardStats } from '@/types';
+import { formatTimeShort } from '@/lib/time';
 
 const tooltipStyle = {
   backgroundColor: '#1a2234',
@@ -14,23 +15,18 @@ const tooltipStyle = {
 
 export function TrafficCharts({ stats }: { stats: DashboardStats | null }) {
   const traffic = stats?.traffic ?? [];
-  const chartData = traffic.length > 0 ? traffic.map((t, i) => ({
-    name: `#${i + 1}`,
-    pps: t.pps,
-    accepted: t.accepted,
-    dropped: t.dropped,
-    replay: Math.round(t.dropped * 0.3),
-  })) : [
-    { name: '0s', pps: 0, accepted: 0, dropped: 0, replay: 0 },
-  ];
+  const chartData = traffic.length > 0
+    ? traffic.map((t, i) => ({
+        name: formatTimeShort(t.time) || `#${i + 1}`,
+        pps: t.pps,
+        accepted: t.accepted,
+        dropped: t.dropped,
+        replay: t.replay ?? 0,
+      }))
+    : [{ name: '—', pps: 0, accepted: 0, dropped: 0, replay: 0 }];
 
-  const volumeData = [
-    { type: 'Chat', volume: 12 },
-    { type: 'Sensor', volume: 45 },
-    { type: 'Video', volume: 120 },
-    { type: 'Voice', volume: 28 },
-    { type: 'File', volume: 65 },
-  ];
+  const volumeData = (stats?.volume_by_type?.length ? stats.volume_by_type : [])
+    .map((v) => ({ type: v.type.replace(' Message', '').replace(' Stream', ''), volume: v.volume }));
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -54,7 +50,7 @@ export function TrafficCharts({ stats }: { stats: DashboardStats | null }) {
       </Card>
 
       <Card>
-        <CardHeader><CardTitle>Accepted vs Dropped</CardTitle></CardHeader>
+        <CardHeader><CardTitle>Accepted vs Dropped (from packet history)</CardTitle></CardHeader>
         <ResponsiveContainer width="100%" height={200}>
           <BarChart data={chartData}>
             <CartesianGrid strokeDasharray="3 3" stroke="#2a3548" />
@@ -69,7 +65,7 @@ export function TrafficCharts({ stats }: { stats: DashboardStats | null }) {
       </Card>
 
       <Card>
-        <CardHeader><CardTitle>Replay Attempts</CardTitle></CardHeader>
+        <CardHeader><CardTitle>Replay Blocked</CardTitle></CardHeader>
         <ResponsiveContainer width="100%" height={200}>
           <LineChart data={chartData}>
             <CartesianGrid strokeDasharray="3 3" stroke="#2a3548" />
@@ -84,13 +80,17 @@ export function TrafficCharts({ stats }: { stats: DashboardStats | null }) {
       <Card>
         <CardHeader><CardTitle>Traffic Volume by Type</CardTitle></CardHeader>
         <ResponsiveContainer width="100%" height={200}>
-          <BarChart data={volumeData} layout="vertical">
-            <CartesianGrid strokeDasharray="3 3" stroke="#2a3548" />
-            <XAxis type="number" stroke="#64748b" fontSize={11} />
-            <YAxis dataKey="type" type="category" stroke="#64748b" fontSize={11} width={50} />
-            <Tooltip contentStyle={tooltipStyle} />
-            <Bar dataKey="volume" fill="#6366f1" radius={[0, 4, 4, 0]} />
-          </BarChart>
+          {volumeData.length > 0 ? (
+            <BarChart data={volumeData} layout="vertical">
+              <CartesianGrid strokeDasharray="3 3" stroke="#2a3548" />
+              <XAxis type="number" stroke="#64748b" fontSize={11} />
+              <YAxis dataKey="type" type="category" stroke="#64748b" fontSize={11} width={50} />
+              <Tooltip contentStyle={tooltipStyle} />
+              <Bar dataKey="volume" fill="#6366f1" radius={[0, 4, 4, 0]} />
+            </BarChart>
+          ) : (
+            <div className="h-full flex items-center justify-center text-sm text-soc-muted">No accepted traffic yet</div>
+          )}
         </ResponsiveContainer>
       </Card>
     </div>
