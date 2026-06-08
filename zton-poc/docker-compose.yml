@@ -12,37 +12,76 @@ services:
   ziti-controller:
     image: openziti/quickstart:latest
     container_name: ziti-controller
+    hostname: ziti-edge-controller
     profiles:
       - openziti
     environment:
       ZITI_BOOTSTRAP: "true"
       ZITI_BOOTSTRAP_USER: admin
       ZITI_BOOTSTRAP_PASSWORD: adminpassword
+      ZITI_USER: admin
+      ZITI_PWD: adminpassword
+      ZITI_CTRL_ADVERTISED_ADDRESS: ziti
+      ZITI_CTRL_ADVERTISED_PORT: "6262"
+      ZITI_CTRL_EDGE_ADVERTISED_ADDRESS: ziti-edge-controller
+      ZITI_CTRL_EDGE_ADVERTISED_PORT: "1280"
     ports:
       - "1280:1280"
       - "8443:8443"
     volumes:
       - ziti-data:/openziti
     networks:
-      - zton-net
+      zton-net:
+        aliases:
+          - ziti
+          - ziti-edge-controller
     command: /var/openziti/scripts/run-controller.sh
 
   ziti-router:
     image: openziti/quickstart:latest
     container_name: ziti-router
+    hostname: ziti-edge-router
     profiles:
       - openziti
     depends_on:
       - ziti-controller
     environment:
-      ZITI_CONTROLLER_RAW: ziti-controller:1280
+      ZITI_CTRL_EDGE_ADVERTISED_ADDRESS: ziti-edge-controller
+      ZITI_CTRL_EDGE_ADVERTISED_PORT: "1280"
+      ZITI_CTRL_ADVERTISED_ADDRESS: ziti
+      ZITI_CTRL_ADVERTISED_PORT: "6262"
+      ZITI_USER: admin
+      ZITI_PWD: adminpassword
+      ZITI_ROUTER_NAME: ziti-edge-router
+      ZITI_ROUTER_ROLES: public
+      ZITI_ROUTER_PORT: "3022"
     ports:
       - "3022:3022"
     volumes:
       - ziti-data:/openziti
     networks:
       - zton-net
-    command: /var/openziti/scripts/run-router.sh
+    command: /var/openziti/scripts/run-router.sh edge
+
+  ziti-bootstrap:
+    image: openziti/quickstart:latest
+    container_name: ziti-bootstrap
+    profiles:
+      - openziti
+    depends_on:
+      - ziti-controller
+      - ziti-router
+    environment:
+      ZITI_CTRL_EDGE_ADVERTISED_ADDRESS: ziti-edge-controller
+      ZITI_CTRL_EDGE_ADVERTISED_PORT: "1280"
+      ZITI_USER: admin
+      ZITI_PWD: adminpassword
+    volumes:
+      - ziti-data:/openziti
+      - ./openziti-bootstrap.sh:/openziti-bootstrap.sh:ro
+    networks:
+      - zton-net
+    command: /bin/bash /openziti-bootstrap.sh
 
   laptop-a:
     build: .
@@ -55,9 +94,9 @@ services:
       ZTON_UDP_PORT: "9999"
       ZTON_WEB_PORT: "8080"
       ZTON_KEYS_DIR: /app/keys
-      ZITI_CTRL_HOST: ziti-controller
+      ZITI_CTRL_HOST: ziti-edge-controller
       ZITI_CTRL_PORT: "1280"
-      ZITI_ROUTER_HOST: ziti-router
+      ZITI_ROUTER_HOST: ziti-edge-router
       ZITI_ROUTER_PORT: "3022"
       ZITI_CONSOLE_URL: "https://localhost:1280/zac/"
     ports:
