@@ -4,7 +4,6 @@ import {
   useNodesState, useEdgesState, MarkerType, type Node, type Edge,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { motion } from 'framer-motion';
 import { Card, CardHeader, CardTitle } from '@/components/ui/card';
 import type { TopologyEdge, TopologyNode } from '@/types';
 import { useDashboardStore } from '@/store/dashboardStore';
@@ -36,6 +35,7 @@ function toFlowNodes(nodes: TopologyNode[]): Node[] {
     id: n.id,
     position: positions[n.id] ?? { x: 0, y: 0 },
     data: { label: n.label, status: n.status, type: n.type },
+    className: n.status === 'online' ? 'node-glow-online' : n.status === 'blocked' ? 'node-glow-blocked' : '',
     style: {
       background: '#1a2234',
       border: `2px solid ${STATUS_COLORS[n.status] ?? '#3b82f6'}`,
@@ -50,13 +50,21 @@ function toFlowNodes(nodes: TopologyNode[]): Node[] {
   }));
 }
 
-function toFlowEdges(edges: TopologyEdge[], activeFlow: { source: string; target: string; status: string } | null): Edge[] {
+function toFlowEdges(
+  edges: TopologyEdge[], 
+  activeFlow: { source: string; target: string; status: string } | null,
+  isSimulating: boolean
+): Edge[] {
   return edges.map((e) => {
     const isActive = activeFlow && (
       (activeFlow.source === e.source && activeFlow.target === e.target)
       || (activeFlow.source === e.source)
       || (activeFlow.target === e.target && e.source === 'laptop-a')
     );
+    
+    // Animate all UDP edges if simulating in bulk, or specific edge if active single flow
+    const shouldAnimate = isActive || (isSimulating && e.kind === 'custom-udp');
+    
     const color = isActive
       ? (activeFlow!.status === 'allowed' ? '#10b981' : '#ef4444')
       : (e.kind === 'fabric-control' || e.kind === 'fabric-ready' ? '#3b82f6' : '#2a3548');
@@ -64,10 +72,11 @@ function toFlowEdges(edges: TopologyEdge[], activeFlow: { source: string; target
       id: e.id,
       source: e.source,
       target: e.target,
-      animated: !!isActive,
+      animated: !!shouldAnimate,
+      className: shouldAnimate ? 'active' : '',
       style: {
         stroke: color,
-        strokeWidth: isActive ? 3 : 1.5,
+        strokeWidth: shouldAnimate ? 3 : 1.5,
         strokeDasharray: e.kind?.startsWith('fabric') ? '6 5' : undefined,
       },
       markerEnd: { type: MarkerType.ArrowClosed, color },
@@ -76,28 +85,38 @@ function toFlowEdges(edges: TopologyEdge[], activeFlow: { source: string; target
 }
 
 export function NetworkTopology() {
-  const { topology, activeFlow } = useDashboardStore();
+  const { topology, activeFlow, stats } = useDashboardStore();
+  const isSimulating = !!stats.running;
+
   const initialNodes = useMemo(() => toFlowNodes(topology.nodes), [topology.nodes]);
-  const initialEdges = useMemo(() => toFlowEdges(topology.edges, activeFlow), [topology.edges, activeFlow]);
+  const initialEdges = useMemo(() => toFlowEdges(topology.edges, activeFlow, isSimulating), [topology.edges, activeFlow, isSimulating]);
+  
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
 
   useEffect(() => { setNodes(toFlowNodes(topology.nodes)); }, [topology.nodes, setNodes]);
-  useEffect(() => { setEdges(toFlowEdges(topology.edges, activeFlow)); }, [topology.edges, activeFlow, setEdges]);
+  useEffect(() => { setEdges(toFlowEdges(topology.edges, activeFlow, isSimulating)); }, [topology.edges, activeFlow, isSimulating, setEdges]);
 
   const onInit = useCallback(() => {}, []);
 
   return (
     <Card className="h-[380px]">
-      <CardHeader>
-        <CardTitle>Network Topology</CardTitle>
-        <div className="flex gap-3 text-xs">
-          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-500" /> Allowed</span>
-          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500" /> Blocked</span>
-          <span className="flex items-center gap-1"><span className="w-3 h-px bg-blue-500 border-t border-dashed border-blue-500" /> OpenZiti fabric</span>
+      <CardHeader className="flex flex-row items-center justify-between pb-2">
+        <div>
+          <CardTitle>Network Topology</CardTitle>
+          <div className="flex gap-3 text-[10px] text-soc-muted mt-1">
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-500" /> Allowed</span>
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500" /> Blocked</span>
+            <span className="flex items-center gap-1"><span className="w-3 h-px bg-blue-500 border-t border-dashed border-blue-500" /> OpenZiti fabric</span>
+          </div>
         </div>
+        {isSimulating && (
+          <span className="text-[10px] text-indigo-400 bg-indigo-950/40 px-2 py-0.5 rounded font-mono animate-pulse">
+            BULK SIMULATION ACTIVE — FLOWING PACKETS
+          </span>
+        )}
       </CardHeader>
-      <div className="h-[300px] rounded-lg overflow-hidden border border-soc-border/40">
+      <div className="h-[290px] rounded-lg overflow-hidden border border-soc-border/40">
         <ReactFlow
           nodes={nodes}
           edges={edges}

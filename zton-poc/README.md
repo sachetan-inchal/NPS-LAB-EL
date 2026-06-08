@@ -84,8 +84,9 @@ The dashboard now separates the project into two honest layers:
 |-------|-----------|----------------|
 | OpenZiti fabric plane | `openziti/quickstart` controller + edge router Docker containers | Production-style controller/router presence, admin console, fabric readiness |
 | OpenZiti ZTON service layer | Bootstrap job creates ZTON identities, UDP/dashboard services, bind/dial policies | Concrete OpenZiti model for authorized access; Phone A has no dial access |
-| ZTON packet lab | Python UDP hub/nodes | Inspectable encryption, signatures, replay blocking, per-packet policy decisions |
-| Tunnel/SDK attachment | Next implementation step | Attach `ziti-edge-tunnel` sidecars or SDK clients so app packets traverse the provisioned OpenZiti services |
+| Tunnel attachment | `ziti-edge-tunnel` sidecars bind the hub service and dial from authorized nodes | Laptop B and Phone B use `zton-hub.openziti`; Phone A receives no intercept |
+| ZTON packet lab | Python UDP hub/nodes | Inspectable encryption, signatures, replay blocking, per-packet policy decisions over the tunnel-attached path |
+| SDK migration | Optional next step | Replace sidecar tunneling with OpenZiti SDK dial/listen calls |
 
 ### Dashboard Features
 

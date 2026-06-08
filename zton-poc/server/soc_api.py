@@ -14,6 +14,8 @@ from server.ziti_fabric import get_fabric_status
 
 router = APIRouter(prefix="/api/soc", tags=["soc"])
 
+
+
 POLICIES = [
     {"id": "p1", "effect": "allow", "source": "Laptop B", "target": "Phone B", "rule": "route-policy"},
     {"id": "p2", "effect": "allow", "source": "Phone B", "target": "Hub", "rule": "route-policy"},
@@ -26,6 +28,9 @@ SCENARIOS = [
     {"id": "s2", "name": "Replay Attack", "description": "100 packets, 10% real replay reinjection", "count": 100, "replay_pct": 0.10, "payload_type": "Sensor Data", "payload_size": 4096},
     {"id": "s3", "name": "Video Stream", "description": "500 encrypted video frames", "count": 500, "replay_pct": 0, "payload_type": "Video Stream", "payload_size": 65536},
     {"id": "s4", "name": "Unauthorized User", "description": "50 packets from Phone A — all denied", "count": 50, "replay_pct": 0, "payload_type": "Video Stream", "payload_size": 10240, "force_sender": "phone-a"},
+    {"id": "s5", "name": "Telemetry DDoS Attack", "description": "1,000 high-frequency sensor packets (PPS spike)", "count": 1000, "replay_pct": 0, "payload_type": "Sensor Data", "payload_size": 512},
+    {"id": "s6", "name": "Mixed Attack Campaign", "description": "300 packets, 30% heavy replay hijacking attempts", "count": 300, "replay_pct": 0.30, "payload_type": "Voice Stream", "payload_size": 2048},
+    {"id": "s7", "name": "Bulk File Transfer", "description": "150 large encrypted chunks (bandwidth volume spike)", "count": 150, "replay_pct": 0, "payload_type": "File Transfer", "payload_size": 262144},
 ]
 
 TOPOLOGY_NODES = [

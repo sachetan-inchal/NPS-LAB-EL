@@ -37,11 +37,13 @@ class ZtonNode:
         self.keypair = load_or_create_keypair(key_path)
         self.session_id = str(uuid.uuid4())[:8]
         self._session: SessionCrypto | None = None
+        self._hub_public_key: bytes | None = None
         self._sequence = 0
         self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self._sock.bind(("0.0.0.0", 0))
         self._running = False
         self._thread: threading.Thread | None = None
+        self._register_thread: threading.Thread | None = None
         self._last_events: list[dict] = []
         self._registered = False
         self._policy_result = "PENDING"
@@ -58,13 +60,14 @@ class ZtonNode:
         self._running = True
         self._thread = threading.Thread(target=self._recv_loop, daemon=True)
         self._thread.start()
-        self.register()
+        self._register_thread = threading.Thread(target=self._register_until_ready, daemon=True)
+        self._register_thread.start()
 
     def stop(self) -> None:
         self._running = False
         self._sock.close()
 
-    def register(self) -> None:
+    def register(self) -> bool:
         pkt = ZtonPacket.build(
             PacketType.HELLO,
             self.device_id,
@@ -74,7 +77,15 @@ class ZtonNode:
             base64.b64encode(self.keypair.public_bytes()).decode(),
             sign_fn=self.keypair.sign,
         )
-        self._send(pkt)
+        return self._send(pkt)
+
+    def _register_until_ready(self) -> None:
+        while self._running and not self._registered:
+            if self.register():
+                self._add_event("auth", f"Registration sent to hub {self.hub_host}:{self.hub_port}")
+            else:
+                self._add_event("deny", f"Waiting for hub route {self.hub_host}:{self.hub_port}")
+            time.sleep(2)
 
     def send_message(self, text: str, target_id: str = "") -> dict:
         if not self._session:
@@ -141,8 +152,13 @@ class ZtonNode:
         threading.Timer(0.8, _mark_denied_if_unauthorized).start()
         return result
 
-    def _send(self, pkt: ZtonPacket) -> None:
-        self._sock.sendto(pkt.to_bytes(), (self.hub_host, self.hub_port))
+    def _send(self, pkt: ZtonPacket) -> bool:
+        try:
+            self._sock.sendto(pkt.to_bytes(), (self.hub_host, self.hub_port))
+            return True
+        except OSError as exc:
+            self._add_event("deny", f"Send failed: {exc}")
+            return False
 
     def _recv_loop(self) -> None:
         while self._running:
@@ -156,6 +172,9 @@ class ZtonNode:
                 break
 
     def _send_heartbeat(self) -> None:
+        if not self._registered:
+            self.register()
+            return
         pkt = ZtonPacket.build(
             PacketType.HEARTBEAT,
             self.device_id,

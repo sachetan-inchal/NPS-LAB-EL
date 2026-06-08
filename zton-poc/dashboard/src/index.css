@@ -19,6 +19,47 @@
   }
 }
 
+/* React Flow Animations */
+@keyframes flow-active {
+  from {
+    stroke-dashoffset: 30;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* Base custom styling for react flow edges */
+.react-flow__edge-path {
+  stroke-dasharray: 8 6;
+  animation: flow-active 2.5s linear infinite;
+}
+
+.react-flow__edge.animated .react-flow__edge-path {
+  stroke-dasharray: 6 4;
+  animation: flow-active 0.8s linear infinite !important;
+  stroke-width: 3.5px !important;
+}
+
+/* Glowing Nodes */
+@keyframes node-glow-green {
+  0%, 100% { box-shadow: 0 0 4px rgba(16, 185, 129, 0.2), inset 0 0 4px rgba(16, 185, 129, 0.1); }
+  50% { box-shadow: 0 0 16px rgba(16, 185, 129, 0.6), inset 0 0 8px rgba(16, 185, 129, 0.3); }
+}
+
+@keyframes node-glow-red {
+  0%, 100% { box-shadow: 0 0 4px rgba(239, 68, 68, 0.2), inset 0 0 4px rgba(239, 68, 68, 0.1); }
+  50% { box-shadow: 0 0 16px rgba(239, 68, 68, 0.6), inset 0 0 8px rgba(239, 68, 68, 0.3); }
+}
+
+.node-glow-online {
+  animation: node-glow-green 2s infinite ease-in-out;
+}
+
+.node-glow-blocked {
+  animation: node-glow-red 2s infinite ease-in-out;
+}
+
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { @apply bg-soc-border rounded-full; }

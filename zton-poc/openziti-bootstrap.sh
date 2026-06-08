@@ -12,7 +12,9 @@ until [ -f "${ZITI_HOME}/ziti.env" ]; do
 done
 
 # shellcheck disable=SC1091
+set +u
 . "${ZITI_HOME}/ziti.env"
+set -u
 
 ZITI="${ZITI_BIN_DIR}/ziti"
 CTRL="${ZITI_CTRL_EDGE_ADVERTISED_ADDRESS}:${ZITI_CTRL_EDGE_ADVERTISED_PORT}"
@@ -27,7 +29,7 @@ mkdir -p "${ZITI_HOME}/zton-identities"
 exists() {
   local kind="$1"
   local name="$2"
-  "${ZITI}" edge list "${kind}" "name = \"${name}\"" --csv 2>/dev/null | grep -q "\"${name}\""
+  "${ZITI}" edge list "${kind}" "name = \"${name}\"" --csv 2>/dev/null | awk -F, -v n="${name}" 'NR > 1 && $2 == n { found = 1 } END { exit found ? 0 : 1 }'
 }
 
 run_ziti_write() {
@@ -125,11 +127,11 @@ ensure_identity "zton-phone-b-client" "zton-authorized,zton-clients"
 ensure_identity "zton-phone-a-client" "zton-blocked,zton-clients"
 
 ensure_config "zton-udp-intercept.v1" "intercept.v1" '{"protocols":["udp"],"addresses":["zton-hub.openziti"],"portRanges":[{"low":9999,"high":9999}]}'
-ensure_config "zton-udp-host.v1" "host.v1" '{"protocol":"udp","address":"laptop-a","port":9999}'
+ensure_config "zton-udp-host.v1" "host.v1" '{"protocol":"udp","address":"127.0.0.1","port":9999}'
 ensure_service "zton-udp-9999" "zton-udp-intercept.v1,zton-udp-host.v1" "zton-services,zton-udp"
 
 ensure_config "zton-dashboard-intercept.v1" "intercept.v1" '{"protocols":["tcp"],"addresses":["zton-dashboard.openziti"],"portRanges":[{"low":8080,"high":8080}]}'
-ensure_config "zton-dashboard-host.v1" "host.v1" '{"protocol":"tcp","address":"laptop-a","port":8080}'
+ensure_config "zton-dashboard-host.v1" "host.v1" '{"protocol":"tcp","address":"127.0.0.1","port":8080}'
 ensure_service "zton-dashboard-8080" "zton-dashboard-intercept.v1,zton-dashboard-host.v1" "zton-services,zton-dashboard"
 
 ensure_service_policy "zton-hosts-bind-services" "Bind" "#zton-hosts" "#zton-services"

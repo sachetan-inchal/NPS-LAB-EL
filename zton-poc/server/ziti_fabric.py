@@ -52,8 +52,8 @@ def get_fabric_status() -> dict:
         "controller": _service_status(controller),
         "router": _service_status(router),
         "console_url": console_url,
-        "zton_transport": "custom-udp-lab",
-        "traffic_integration": "openziti-service-layer-provisioned",
+        "zton_transport": "openziti-tunnel-attached-udp",
+        "traffic_integration": "ziti-edge-tunnel-sidecars",
         "provisioned_services": [
             {
                 "name": "zton-udp-9999",
@@ -85,13 +85,13 @@ def get_fabric_status() -> dict:
                 "id": "zton",
                 "label": "ZTON packet lab",
                 "status": "active",
-                "description": "The default demo packets still use the custom raw UDP path so encryption, signatures, policy, and replay behavior remain inspectable.",
+                "description": "Authorized ZTON node traffic targets the OpenZiti intercept host zton-hub.openziti and is carried by ziti-edge-tunnel sidecars.",
             },
             {
                 "id": "next",
-                "label": "Traffic attachment",
-                "status": "next-step",
-                "description": "Attach ziti-edge-tunnel sidecars or an SDK client to carry the ZTON UDP packets over the provisioned OpenZiti services.",
+                "label": "SDK migration",
+                "status": "optional-next-step",
+                "description": "A future SDK migration could remove the TUN sidecars and call OpenZiti directly from the Python application.",
             },
         ],
         "recommended_run": "docker compose --profile openziti up --build",

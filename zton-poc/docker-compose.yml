@@ -29,7 +29,7 @@ services:
       - "1280:1280"
       - "8443:8443"
     volumes:
-      - ziti-data:/openziti
+      - ziti-data:/persistent
     networks:
       zton-net:
         aliases:
@@ -58,7 +58,7 @@ services:
     ports:
       - "3022:3022"
     volumes:
-      - ziti-data:/openziti
+      - ziti-data:/persistent
     networks:
       - zton-net
     command: /var/openziti/scripts/run-router.sh edge
@@ -77,11 +77,111 @@ services:
       ZITI_USER: admin
       ZITI_PWD: adminpassword
     volumes:
-      - ziti-data:/openziti
+      - ziti-data:/persistent
       - ./openziti-bootstrap.sh:/openziti-bootstrap.sh:ro
     networks:
       - zton-net
     command: /bin/bash /openziti-bootstrap.sh
+
+  ziti-tunnel-hub:
+    image: openziti/ziti-edge-tunnel:latest
+    container_name: ziti-tunnel-hub
+    profiles:
+      - openziti
+    depends_on:
+      ziti-bootstrap:
+        condition: service_completed_successfully
+      laptop-a:
+        condition: service_started
+    network_mode: "service:laptop-a"
+    volumes:
+      - ziti-data:/persistent:ro
+      - ziti-hub-identity:/identities
+    entrypoint: /bin/sh
+    command: >
+      -c "set -e;
+      if [ ! -s /identities/zton-hub-host.json ]; then
+        ziti-edge-tunnel enroll -j /persistent/zton-identities/zton-hub-host.jwt -i /identities/zton-hub-host.json;
+      fi;
+      exec ziti-edge-tunnel run-host -i /identities/zton-hub-host.json -v 3"
+
+  ziti-tunnel-laptop-b:
+    image: openziti/ziti-edge-tunnel:latest
+    container_name: ziti-tunnel-laptop-b
+    profiles:
+      - openziti
+    depends_on:
+      ziti-bootstrap:
+        condition: service_completed_successfully
+      laptop-b:
+        condition: service_started
+    network_mode: "service:laptop-b"
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    volumes:
+      - ziti-data:/persistent:ro
+      - ziti-laptop-b-identity:/identities
+    entrypoint: /bin/sh
+    command: >
+      -c "set -e;
+      if [ ! -s /identities/zton-laptop-b-client.json ]; then
+        ziti-edge-tunnel enroll -j /persistent/zton-identities/zton-laptop-b-client.jwt -i /identities/zton-laptop-b-client.json;
+      fi;
+      exec ziti-edge-tunnel run -i /identities/zton-laptop-b-client.json -v 3"
+
+  ziti-tunnel-phone-b:
+    image: openziti/ziti-edge-tunnel:latest
+    container_name: ziti-tunnel-phone-b
+    profiles:
+      - openziti
+    depends_on:
+      ziti-bootstrap:
+        condition: service_completed_successfully
+      phone-b:
+        condition: service_started
+    network_mode: "service:phone-b"
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    volumes:
+      - ziti-data:/persistent:ro
+      - ziti-phone-b-identity:/identities
+    entrypoint: /bin/sh
+    command: >
+      -c "set -e;
+      if [ ! -s /identities/zton-phone-b-client.json ]; then
+        ziti-edge-tunnel enroll -j /persistent/zton-identities/zton-phone-b-client.jwt -i /identities/zton-phone-b-client.json;
+      fi;
+      exec ziti-edge-tunnel run -i /identities/zton-phone-b-client.json -v 3"
+
+  ziti-tunnel-phone-a:
+    image: openziti/ziti-edge-tunnel:latest
+    container_name: ziti-tunnel-phone-a
+    profiles:
+      - openziti
+    depends_on:
+      ziti-bootstrap:
+        condition: service_completed_successfully
+      phone-a:
+        condition: service_started
+    network_mode: "service:phone-a"
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    volumes:
+      - ziti-data:/persistent:ro
+      - ziti-phone-a-identity:/identities
+    entrypoint: /bin/sh
+    command: >
+      -c "set -e;
+      if [ ! -s /identities/zton-phone-a-client.json ]; then
+        ziti-edge-tunnel enroll -j /persistent/zton-identities/zton-phone-a-client.jwt -i /identities/zton-phone-a-client.json;
+      fi;
+      exec ziti-edge-tunnel run -i /identities/zton-phone-a-client.json -v 3"
 
   laptop-a:
     build: .
@@ -118,7 +218,7 @@ services:
       ZTON_ROLE: node
       ZTON_DEVICE_ID: laptop-b
       ZTON_DEVICE_NAME: "Laptop B (Authorized Sender)"
-      ZTON_HUB_HOST: laptop-a
+      ZTON_HUB_HOST: zton-hub.openziti
       ZTON_UDP_PORT: "9999"
       ZTON_WEB_PORT: "8080"
       ZTON_AUTHORIZED: "true"
@@ -141,7 +241,7 @@ services:
       ZTON_ROLE: node
       ZTON_DEVICE_ID: phone-b
       ZTON_DEVICE_NAME: "Phone B (Authorized Viewer)"
-      ZTON_HUB_HOST: laptop-a
+      ZTON_HUB_HOST: zton-hub.openziti
       ZTON_UDP_PORT: "9999"
       ZTON_WEB_PORT: "8080"
       ZTON_AUTHORIZED: "true"
@@ -164,7 +264,7 @@ services:
       ZTON_ROLE: node
       ZTON_DEVICE_ID: phone-a
       ZTON_DEVICE_NAME: "Phone A (Unauthorized)"
-      ZTON_HUB_HOST: laptop-a
+      ZTON_HUB_HOST: zton-hub.openziti
       ZTON_UDP_PORT: "9999"
       ZTON_WEB_PORT: "8080"
       ZTON_AUTHORIZED: "false"
@@ -184,3 +284,7 @@ networks:
 volumes:
   zton-keys:
   ziti-data:
+  ziti-hub-identity:
+  ziti-laptop-b-identity:
+  ziti-phone-b-identity:
+  ziti-phone-a-identity:
