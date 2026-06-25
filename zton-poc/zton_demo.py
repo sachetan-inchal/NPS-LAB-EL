@@ -54,7 +54,7 @@ def run_server(port):
     print(f"[*] Loaded key: {key.decode()}")
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.bind(("127.0.0.1", port))
+    sock.bind(("0.0.0.0", port))
 
     highest_nonce = -1
 
