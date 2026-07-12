@@ -1,5 +1,6 @@
 """Device-local metrics API — works on ports 8081–8083 without cross-origin."""
 
+import asyncio
 import json
 import urllib.error
 import urllib.request
@@ -10,7 +11,7 @@ from zton.timeutil import utc_now_iso
 
 router = APIRouter(prefix="/api/device", tags=["device"])
 
-HUB_METRICS_URL = "http://127.0.0.1:8080/api/live"
+HUB_METRICS_URL = "http://zton-dashboard.openziti:8080/api/live"
 
 
 def _fetch_hub(path: str) -> dict | list | None:
@@ -94,9 +95,11 @@ async def device_metrics():
         "replay_blocked": len([e for e in events if e.get("kind") == "deny" and "replay" in e.get("message", "").lower()]),
     }
 
-    hub_stats = _fetch_hub(f"/stats?device_id={node.device_id}")
-    hub_traffic = _fetch_hub(f"/traffic?device_id={node.device_id}")
-    hub_packets = _fetch_hub(f"/packets?device_id={node.device_id}&limit=20")
+    hub_stats, hub_traffic, hub_packets = await asyncio.gather(
+        asyncio.to_thread(_fetch_hub, f"/stats?device_id={node.device_id}"),
+        asyncio.to_thread(_fetch_hub, f"/traffic?device_id={node.device_id}"),
+        asyncio.to_thread(_fetch_hub, f"/packets?device_id={node.device_id}&limit=20")
+    )
 
     stats = local
     if isinstance(hub_stats, dict) and hub_stats.get("accepted") is not None:

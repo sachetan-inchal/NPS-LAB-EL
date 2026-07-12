@@ -124,7 +124,7 @@ ensure_service_edge_router_policy() {
 ensure_identity "zton-hub-host" "zton-hosts"
 ensure_identity "zton-laptop-b-client" "zton-authorized,zton-clients"
 ensure_identity "zton-phone-b-client" "zton-authorized,zton-clients"
-ensure_identity "zton-phone-a-client" "zton-blocked,zton-clients"
+ensure_identity "zton-phone-a-client" "zton-authorized,zton-blocked,zton-clients"
 
 ensure_config "zton-udp-intercept.v1" "intercept.v1" '{"protocols":["udp"],"addresses":["zton-hub.openziti"],"portRanges":[{"low":9999,"high":9999}]}'
 ensure_config "zton-udp-host.v1" "host.v1" '{"protocol":"udp","address":"127.0.0.1","port":9999}'

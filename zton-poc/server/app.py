@@ -167,8 +167,11 @@ async def events():
 @app.post("/api/send")
 async def send_packet(req: SendRequest):
     if node:
-        stats = node.send_message(req.message, req.target_id)
-        return {"ok": True, "stats": stats}
+        try:
+            stats = node.send_message(req.message, req.target_id)
+            return {"ok": True, "stats": stats}
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
     if hub:
         # Hub can inject a test packet as if from laptop-b for demo without all nodes running
         return {"ok": False, "error": "Hub cannot send — use a node device or POST from laptop-b UI"}

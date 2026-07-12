@@ -104,15 +104,17 @@ function connectWebSocket() {
 }
 
 async function pollNodeEvents() {
-  const events = await fetch('/api/events').then((r) => r.json());
-  logEl.innerHTML = '';
-  (events.events || []).forEach(appendLog);
+  const updateLog = (events) => {
+    logEl.innerHTML = '';
+    (events || []).forEach(appendLog);
+  };
+
+  const res = await fetch('/api/events').then((r) => r.json());
+  updateLog(res.events);
+
   setInterval(async () => {
     const res = await fetch('/api/events').then((r) => r.json());
-    const newEvents = res.events || [];
-    if (newEvents.length > logEl.children.length) {
-      newEvents.slice(logEl.children.length).forEach(appendLog);
-    }
+    updateLog(res.events);
   }, 1500);
 }
 
@@ -168,18 +170,36 @@ sendBtn.addEventListener('click', async () => {
   const message = $('#message-input').value.trim();
   if (!message) return;
   const target_id = $('#target-select').value;
-  const res = await fetch('/api/send', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message, target_id }),
-  }).then((r) => r.json());
-  if (res.stats) {
+  try {
+    const res = await fetch('/api/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message, target_id }),
+    }).then((r) => r.json());
+    if (res.stats) {
+      appendLog({
+        kind: 'packet',
+        device_name: deviceId,
+        message: `Sent: ${message}`,
+        policy: 'SENT',
+        stats: res.stats,
+        timestamp: new Date().toISOString(),
+      });
+    } else if (res.error) {
+      appendLog({
+        kind: 'deny',
+        device_name: deviceId,
+        message: `Send failed: ${res.error}`,
+        policy: 'DENY',
+        timestamp: new Date().toISOString(),
+      });
+    }
+  } catch (err) {
     appendLog({
-      kind: 'packet',
+      kind: 'deny',
       device_name: deviceId,
-      message: `Sent: ${message}`,
-      policy: 'SENT',
-      stats: res.stats,
+      message: `Request failed: ${err.message}`,
+      policy: 'DENY',
       timestamp: new Date().toISOString(),
     });
   }
