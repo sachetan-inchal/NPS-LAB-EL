@@ -28,7 +28,7 @@ require (
 	github.com/go-acme/lego/v4 v4.35.2
 	github.com/go-jose/go-jose/v4 v4.1.4
 	github.com/go-openapi/errors v0.22.7
-	github.com/go-openapi/jsonpointer v0.23.1
+	github.com/go-openapi/jsonpointer v1.0.0
 	github.com/go-openapi/loads v0.23.3
 	github.com/go-openapi/runtime v0.32.2
 	github.com/go-openapi/spec v0.22.4
